@@ -112,7 +112,7 @@ Location of the lambda code
 
 ###### Whitelist
 
-A comma separated string of either [regular expressions](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions) or [jspath](https://github.com/dfilatov/jspath)s.
+A comma separated string of either strings, [regular expressions](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions), or [jspath](https://github.com/dfilatov/jspath)s.
 
 Examples:
 
@@ -123,9 +123,9 @@ ERROR
 Any log that contains `ERROR`
 
 ```
-\sERROR\s
+/\serror\s/i
 ```
-Any log that contains `ERROR` surrounded by white space.
+Any log that contains `error` surrounded by white space, case-insensitive.
 
 ```
 ERROR, { .level === "error" }

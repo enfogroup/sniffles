@@ -5,12 +5,13 @@ import always from 'ramda/src/always'
 import anyPass from 'ramda/src/anyPass'
 import both from 'ramda/src/both'
 import chain from 'ramda/src/chain'
+import cond from 'ramda/src/cond'
 import endsWith from 'ramda/src/endsWith'
 import filter from 'ramda/src/filter'
 import flip from 'ramda/src/flip'
 import gt from 'ramda/src/gt'
 import head from 'ramda/src/head'
-import ifElse from 'ramda/src/ifElse'
+import includes from 'ramda/src/includes'
 import length from 'ramda/src/length'
 import map from 'ramda/src/map'
 import match from 'ramda/src/match'
@@ -20,8 +21,10 @@ import pipe from 'ramda/src/pipe'
 import prop from 'ramda/src/prop'
 import split from 'ramda/src/split'
 import startsWith from 'ramda/src/startsWith'
+import T from 'ramda/src/T'
 import take from 'ramda/src/take'
 import tap from 'ramda/src/tap'
+import test from 'ramda/src/test'
 import toString from 'ramda/src/toString'
 import trim from 'ramda/src/trim'
 // import { inspect } from 'util'
@@ -67,8 +70,10 @@ const
           return whitelist
         })
       : Promise.resolve(whitelist),
-  toRegExp = (str: string) => new RegExp(str), // eslint-disable-line security/detect-non-literal-regexp
-  test = (re: RegExp) => (str: string) => re.test(str),
+  toRegExp = pipe<string, string[], RegExp>(
+    match(/^\/([^/]+)\/([gimsuy]*)$/),
+    ([ _, re, flags ]) => new RegExp(re, flags) // eslint-disable-line security/detect-non-literal-regexp
+  ),
   base64decode = (str: string) => Buffer.from(str, 'base64'),
   unzip = (buf: Buffer) => {
     try {
@@ -97,6 +102,7 @@ const
     }).promise()
 
 export const
+  toStringFn = includes,
   toRegExpFn = pipe<string, any, any>(toRegExp, test),
   toJspathFn = (str: string) =>
     pipe<string, string[], string, any, any, number, boolean>(
@@ -107,11 +113,11 @@ export const
       length,
       flip(gt)(0)
     ),
-  toWhitelistFn = ifElse(
-    both(startsWith('{'), endsWith('}')),
-    toJspathFn,
-    toRegExpFn
-  )
+  toWhitelistFn = cond([
+    [ test(/^\/[^/]+\/[gimsuy]*$/), toRegExpFn ],
+    [ both(startsWith('{'), endsWith('}')), toJspathFn ],
+    [ T, toStringFn ],
+  ])
 
 export const handler = (event: KinesisStreamEvent) =>
   getWhitelist()

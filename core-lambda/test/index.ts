@@ -1,5 +1,5 @@
 /* global describe, expect, it, jest */
-import { handler, toRegExpFn, toJspathFn, toWhitelistFn } from '../src/index'
+import { handler, toStringFn, toRegExpFn, toJspathFn, toWhitelistFn } from '../src/index'
 
 describe('index', () => {
   describe('handler', () => {
@@ -7,27 +7,36 @@ describe('index', () => {
       expect(typeof handler).toBe('function')
     })
   })
-  describe('toRegExpFn', () => {
+  describe('toStringFn', () => {
     it('tests positive', () => {
-      expect(toRegExpFn('^abc$')('abc')).toBe(true)
+      expect(toStringFn('abc')('x\ty\tabcd')).toBe(true)
     })
     it('tests negative', () => {
-      expect(toRegExpFn('^abc$')('abd')).toBe(false)
+      expect(toStringFn('abc.*')('x\ty\tabc')).toBe(false)
+    })
+  })
+  describe('toRegExpFn', () => {
+    it('tests positive', () => {
+      expect(toRegExpFn('/abc$/')('x\ty\tabc')).toBe(true)
+    })
+    it('tests negative', () => {
+      expect(toRegExpFn('/abc$/')('x\ty\tabd')).toBe(false)
     })
   })
   describe('toJspathFn', () => {
     it('tests positive', () => {
-      expect(toJspathFn('{ .level === "ERROR" }')(`\t${JSON.stringify({ level: 'ERROR' })}`)).toBe(true)
+      expect(toJspathFn('{ .level === "ERROR" }')(`x\ty\t${JSON.stringify({ level: 'ERROR' })}`)).toBe(true)
     })
     it('tests negative', () => {
-      expect(toJspathFn('{ .level === "ERROR" }')(`\t${JSON.stringify({ level: 'INFO' })}`)).toBe(false)
+      expect(toJspathFn('{ .level === "ERROR" }')(`x\ty\t${JSON.stringify({ level: 'INFO' })}`)).toBe(false)
     })
   })
   describe('toWhitelistFn', () => {
     it('returns correct function', () => {
-      expect.assertions(2)
-      expect(toWhitelistFn('^abc$')('abc')).toBe(true)
-      expect(toWhitelistFn('{ .level === "ERROR" }')(`\t${JSON.stringify({ level: 'ERROR' })}`)).toBe(true)
+      expect.assertions(3)
+      expect(toWhitelistFn('/abc$/')('x\ty\tabc')).toBe(true)
+      expect(toWhitelistFn('{ .level === "ERROR" }')(`x\ty\t${JSON.stringify({ level: 'ERROR' })}`)).toBe(true)
+      expect(toWhitelistFn('abc')('easy\tas\tabc')).toBe(true)
     })
   })
 })
