@@ -16,7 +16,7 @@ CORE_LAMBDA_S3_KEY=""
 
 # Logs that match these patterns will get forwarded to the SNS topic.
 # Leave empty to not upload a whitelist.
-# It's a comma separated string, e.g. ERROR,"level": ?"ERROR"
+# It's a comma separated string, e.g. /ERROR/i,{ .level === "ERROR" },string-match
 LOG_WHITELIST=""
 
 # Where in Systems Manager Parameter Store the log whitelist patterns are stored.
@@ -122,7 +122,8 @@ EXISTING_SNS=""
 # ASSETS
 ###
 
-if [ "$DEPLOY_ASSETS_MODULE" == "Yes" ]; then
+if [ "$DEPLOY_ASSETS_MODULE" = "Yes" ]; then
+  echo "Deploying assets..."
   aws cloudformation deploy \
     --stack-name "$FULL_STACK_NAME_ASSETS" \
     --template-file ./cloudformation-templates/assets.yml \
@@ -130,6 +131,7 @@ if [ "$DEPLOY_ASSETS_MODULE" == "Yes" ]; then
     --no-fail-on-empty-changeset \
     --tags Project="$PROJECT" ProjectKey="$PROJECT_KEY" Account=$(aws sts get-caller-identity | jq -r '.Account') Environment="$ENVIRONMENT" CostCenter="$PROJECT" SetupRequest="$SETUP_REQUEST" SLA="$SLA" ManagedBy=cloudformation Repo=https://github.com/enfogroup/sniffles/
 
+  echo "Building core lambda..."
   cd core-lambda
   yarn install
   yarn test
@@ -138,6 +140,7 @@ if [ "$DEPLOY_ASSETS_MODULE" == "Yes" ]; then
   yarn upload
   cd ..
 
+  echo "Building slack lambda..."
   cd slack-lambda
   yarn install
   yarn test
@@ -151,14 +154,16 @@ fi
 # CORE
 ###
 
-if [ -n $LOG_WHITELIST ]; then
+if [ -n "$LOG_WHITELIST" ]; then
+  echo "Setting whitelist..."
   aws ssm put-parameter \
     --name "/$WHITELIST_PATH" \
     --value "${LOG_WHITELIST}" \
     --type String \
-    --overwrite
+    --overwrite > /dev/null
 fi
 
+echo "Deploying core..."
 aws cloudformation deploy \
   --stack-name "$FULL_STACK_NAME_CORE" \
   --template-file ./cloudformation-templates/core.yml \
@@ -177,15 +182,17 @@ eval $OUTPUTS
 # LOGSUBSCRIBER
 ###
 
-if [ -n $LOG_GROUPS_PATH ]; then
-  if [ -n $LOG_GROUPS_WHITELIST ]; then
+if [ -n "$LOG_GROUPS_PATH" ]; then
+  if [ -n "$LOG_GROUPS_WHITELIST" ]; then
+    echo "Setting log groups..."
     aws ssm put-parameter \
       --name "/$LOG_GROUPS_PATH" \
       --value "${LOG_GROUPS_WHITELIST}" \
       --type String \
-      --overwrite
+      --overwrite > /dev/null
   fi
 
+  echo "Deploying log subscriber..."
   aws cloudformation deploy \
     --stack-name "$FULL_STACK_NAME_LOGSUBSCRIBER" \
     --template-file ./cloudformation-templates/log-subscriber.yml \
@@ -199,7 +206,8 @@ fi
 # OPSGENIE
 ###
 
-if [ -n $SNS_OPSGENIE_ENDPOINT ]; then
+if [ -n "$SNS_OPSGENIE_ENDPOINT" ]; then
+  echo "Deploying sns opsgenie..."
   aws cloudformation deploy \
     --stack-name "$FULL_STACK_NAME_OPSGENIE" \
     --template-file ./cloudformation-templates/opsgenie.yml \
@@ -212,16 +220,18 @@ fi
 # SLACK
 ###
 
-if [ -n $SLACK_CHANNEL ]; then
-  if [ -n $SLACK_TOKEN ]; then
+if [ -n "$SLACK_CHANNEL" ]; then
+  if [ -n "$SLACK_TOKEN" ]; then
+    echo "Setting slack token..."
     aws ssm put-parameter \
       --name "/$SLACK_TOKEN_PATH" \
       --value "$SLACK_TOKEN" \
       --type SecureString \
       --key-id "$SLACK_TOKEN_KEY" \
-      --overwrite
+      --overwrite > /dev/null
   fi
 
+  echo "Deploying slack..."
   aws cloudformation deploy \
     --stack-name "$FULL_STACK_NAME_SLACK" \
     --template-file ./cloudformation-templates/slack.yml \
@@ -235,6 +245,7 @@ fi
 # CLOUDWATCH
 ###
 
+echo "Deploying cloudwatch topic..."
 aws cloudformation deploy \
   --stack-name "$FULL_STACK_NAME_CLOUDWATCH" \
   --template-file ./cloudformation-templates/cloudwatch-topic.yml \
@@ -249,7 +260,8 @@ eval $OUTPUTS
 # OPSGENIE CLOUDWATCH
 ###
 
-if [ -n $CLOUDWATCH_OPSGENIE_ENDPOINT ]; then
+if [ -n "$CLOUDWATCH_OPSGENIE_ENDPOINT" ]; then
+  echo "Deploying cloudwatch opsgenie..."
   aws cloudformation deploy \
     --stack-name "$FULL_STACK_NAME_OPSGENIE_CLOUDWATCH" \
     --template-file ./cloudformation-templates/opsgenie.yml \
@@ -262,7 +274,8 @@ fi
 # CHATBOT
 ###
 
-if [ -n $SLACK_CHANNEL_ID ]; then
+if [ -n "$SLACK_CHANNEL_ID" ]; then
+  echo "Deploying chatbot..."
   aws cloudformation deploy \
     --stack-name "$FULL_STACK_NAME_CHATBOT" \
     --template-file ./cloudformation-templates/chatbot.yml \
@@ -276,6 +289,7 @@ fi
 # LAMBDA CLOUDWATCH ALARM
 ###
 
+echo "Deploying cloudwatch alarm core..."
 aws cloudformation deploy \
   --stack-name "$FULL_STACK_NAME_CORE_LAMBDA" \
   --template-file ./cloudformation-templates/lambda-cloudwatch-alarm.yml \
@@ -283,7 +297,8 @@ aws cloudformation deploy \
   --no-fail-on-empty-changeset \
   --tags Project="$PROJECT" ProjectKey="$PROJECT_KEY" Account=$(aws sts get-caller-identity | jq -r '.Account') Environment="$ENVIRONMENT" CostCenter="$PROJECT" SetupRequest="$SETUP_REQUEST" SLA="$SLA" ManagedBy=cloudformation Repo=https://github.com/enfogroup/sniffles/
 
-if [ -n $SLACK_CHANNEL ]; then
+if [ -n "$SLACK_CHANNEL" ]; then
+  echo "Deploying cloudwatch alarm slack..."
   aws cloudformation deploy \
     --stack-name "$FULL_STACK_NAME_SLACK_LAMBDA" \
     --template-file ./cloudformation-templates/lambda-cloudwatch-alarm.yml \
@@ -292,7 +307,8 @@ if [ -n $SLACK_CHANNEL ]; then
     --tags Project="$PROJECT" ProjectKey="$PROJECT_KEY" Account=$(aws sts get-caller-identity | jq -r '.Account') Environment="$ENVIRONMENT" CostCenter="$PROJECT" SetupRequest="$SETUP_REQUEST" SLA="$SLA" ManagedBy=cloudformation Repo=https://github.com/enfogroup/sniffles/
 fi
 
-if [ -n $LOG_GROUPS_PATH ]; then
+if [ -n "$LOG_GROUPS_PATH" ]; then
+  echo "Deploying cloudwatch alarm log subscriber..."
   aws cloudformation deploy \
     --stack-name "$FULL_STACK_NAME_LOGSUBSCRIBER_LAMBDA" \
     --template-file ./cloudformation-templates/lambda-cloudwatch-alarm.yml \
