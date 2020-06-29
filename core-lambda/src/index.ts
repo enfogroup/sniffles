@@ -1,14 +1,13 @@
 import { KinesisStreamEvent, KinesisStreamRecord } from 'aws-lambda'
 import { SNS, SSM } from 'aws-sdk'
 import { apply as jspathApply } from 'jspath'
-// @ts-ignore
-import __ from 'ramda/src/__'
 import always from 'ramda/src/always'
 import anyPass from 'ramda/src/anyPass'
 import both from 'ramda/src/both'
 import chain from 'ramda/src/chain'
 import endsWith from 'ramda/src/endsWith'
 import filter from 'ramda/src/filter'
+import flip from 'ramda/src/flip'
 import gt from 'ramda/src/gt'
 import head from 'ramda/src/head'
 import ifElse from 'ramda/src/ifElse'
@@ -90,7 +89,7 @@ const
     sns.publish({
       TopicArn,
       Message: JSON.stringify(log),
-      Subject: take(100)(`[${ProjectKey}] ${ErrorMessage} ${AccountId} ${log.logGroup}`),
+      Subject: take(100, `[${ProjectKey}] ${ErrorMessage} ${AccountId} ${log.logGroup}`),
       MessageAttributes: {
         eventType: { DataType: 'String', StringValue: 'create' },
         tags: { DataType: 'String', StringValue: ProjectKey },
@@ -106,7 +105,7 @@ export const
       JSON.parse,
       (message: any) => jspathApply(`.${str}`, message),
       length,
-      gt(__, 0)
+      flip(gt)(0)
     ),
   toWhitelistFn = ifElse(
     both(startsWith('{'), endsWith('}')),

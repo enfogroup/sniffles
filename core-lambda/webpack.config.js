@@ -2,7 +2,8 @@ const path = require('path'),
   { ESBuildPlugin } = require('esbuild-loader')
 
 module.exports = {
-  devtool: false,
+  devtool: 'hidden-source-map',
+  externals: [ 'aws-sdk' ],
   entry: {
     index: './src/index.ts',
   },

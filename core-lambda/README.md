@@ -7,5 +7,5 @@ yarn install
 yarn test
 yarn build
 yarn package
-RESOURCES_S3_BUCKET="some-bucket" SLACK_LAMBDA_S3_KEY="lambdas/v1/core.zip" yarn upload
+RESOURCES_S3_BUCKET="some-bucket" CORE_LAMBDA_S3_KEY="lambdas/v1/core.zip" yarn upload
 ```
