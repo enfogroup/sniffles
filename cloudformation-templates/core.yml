@@ -21,6 +21,12 @@ Parameters:
     Type: String
     Description: ErrorMessage is included in the alarm, e.g. "An error was logged"
     Default: Error logged in
+  S3Bucket:
+    Type: String
+    Description: Where the core lambda is stored
+  S3Key:
+    Type: String
+    Description: Where the core lambda is located
 
 Conditions:
   CreateSnsTopic:
@@ -65,94 +71,8 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       Code:
-        ZipFile: |
-          let lastFetch = new Date(0),
-            whitelist = []
-          const AWS = require('aws-sdk'),
-            { inspect } = require('util'),
-            { gunzipSync } = require('zlib'),
-            ssm = new AWS.SSM(),
-            sns = new AWS.SNS(),
-            { AccountId, ErrorMessage, ProjectKey, TopicArn, WhitelistParameterStorePath } = process.env,
-            // TODO: Message Attributes configurable?
-            pipe = (steps) => (data) => steps.reduce((value, fn) => fn(value), data),
-            prop = (p) => (o) => o && o[p],
-            path = (ps) => (o) => ps.reduce((val, p) => prop(p)(val), o),
-            pathSatisfies = (pred) => (p) => pipe([ path(p), pred ]),
-            filter = (fn) => (x) => x.filter(fn),
-            map = (fn) => (x) => x.map(fn),
-            trim = (s) => s.trim(),
-            split = (x) => (s) => s.split(x),
-            unnest = (x) => [].concat(...x),
-            chain = (fn) => pipe([ map(fn), unnest ]),
-            // allPass = (fns) => (x) => fns.reduce((value, fn) => value && fn(x), true),
-            anyPass = (fns) => (x) => fns.reduce((value, fn) => value || fn(x), false),
-            take = (n) => (x) => x.slice(0, n),
-            secondsAgo = (n) => new Date(new Date()-n*1000),
-            getWhitelist = () =>
-              lastFetch < secondsAgo(60)
-                ? ssm.getParameter({Name: WhitelistParameterStorePath}).promise()
-                    // .then(tap(console.log))
-                    .then(path(['Parameter', 'Value']))
-                    .then(split(','))
-                    .then(map(trim))
-                    .catch(pipe([
-                      tap(console.warn),
-                      () => (['.*']), // whitelist everything
-                    ]))
-                    .then((wl) => {
-                      lastFetch = new Date()
-                      whitelist = wl
-                      return whitelist
-                    })
-                  : Promise.resolve(whitelist),
-            toRegExp = (str) => new RegExp(str),
-            test = (re) => (str) => re.test(str),
-            whitelistFns = map(pipe([ toRegExp, test ]))(whitelist),
-            tap = (fn) => (x) => { fn(x); return x; },
-            base64decode = (str) => Buffer.from(str, 'base64'),
-            unzip = (buf) => {
-              try {
-                return gunzipSync(buf)
-              } catch {
-                return buf
-              }
-            },
-            toString = (x) => x.toString(),
-            parseRecord = pipe([
-              path(['kinesis', 'data']),
-              base64decode,
-              unzip,
-              toString,
-              JSON.parse,
-              (m) => map((logEvent) => ({ ...m, logEvents: [logEvent] }))(m.logEvents),
-            ]),
-            publishLog = (log) =>
-              sns.publish({
-                TopicArn,
-                Message: JSON.stringify(log),
-                Subject: take(100)(`[${ProjectKey}] ${ErrorMessage} ${AccountId} ${log.logGroup}`),
-                MessageAttributes: {
-                  eventType: { DataType: 'String', StringValue: 'create' },
-                  tags: { DataType: 'String', StringValue: ProjectKey },
-                },
-              }).promise()
-          exports.handler = (event) =>
-            getWhitelist()
-              // .then(tap(console.log))
-              .then(map(pipe([ toRegExp, test ])))
-              .then((whitelistFns) => pipe([
-                prop('Records'),
-                chain(parseRecord),
-                // tap((x) => console.log(inspect(x, {depth: Infinity}))),
-                filter(pathSatisfies(anyPass(whitelistFns))(['logEvents', 0, 'message'])),
-                tap((x) => console.log(`Found ${x.length} entries`)),
-                map(publishLog),
-                Promise.all.bind(Promise),
-              ])(event))
-              // .then(tap(console.log))
-              .then(() => 'OK')
-              .catch(console.error)
+        S3Bucket: !Ref S3Bucket
+        S3Key: !Ref S3Key
       Environment:
         Variables:
           AccountId: !Sub "${AWS::AccountId}"
