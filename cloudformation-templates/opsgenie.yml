@@ -1,0 +1,29 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Sniffles Opsgenie module
+
+Parameters:
+  SnsTopic:
+    Type: String
+    Description: SNS topic ARN to subscribe to
+  OpsgenieEndpoint:
+    Type: String
+    Description: Opsgenie integration https url
+
+Resources:
+  Subscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: https
+      Endpoint: !Ref OpsgenieEndpoint
+      TopicArn: !Ref SnsTopic
+
+Outputs:
+  TemplateID:
+    Description: Template reference name
+    Value: 'opsgenie'
+  Region:
+    Description: 'Region where stack is deployed'
+    Value: !Sub '${AWS::Region}'
+  StackName:
+    Description: 'Stack name.'
+    Value: !Sub '${AWS::StackName}'

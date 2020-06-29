@@ -1,0 +1,167 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Sniffles log subscriber
+
+Parameters:
+  KinesisStream:
+    Type: String
+    Description: Log subscription destination Kinesis stream ARN
+  CloudwatchRole:
+    Type: String
+    Description: Role for subscriptions to use
+  LogGroupPatternsParameterStorePath:
+    Type: String
+    Description: SSM Parameter Store path to log group patterns that should be subscribed
+    Default: "sniffles/default/logGroupPatterns"
+
+Resources:
+  Lambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          const AWS = require('aws-sdk'),
+            cwl = new AWS.CloudWatchLogs(),
+            ssm = new AWS.SSM(),
+            { CloudwatchRole, KinesisStream, LogGroupPatternsParameterStorePath} = process.env,
+            pipe = (steps) => (data) => steps.reduce((value, fn) => fn(value), data),
+            prop = (p) => (o) => o && o[p],
+            path = (ps) => (o) => ps.reduce((val, p) => prop(p)(val), o),
+            not = (x) => !x,
+            complement = (fn) => pipe([ fn, not ]),
+            filter = (fn) => (xs) => xs.filter(fn),
+            reject = (fn) => (xs) => xs.filter(complement(fn)),
+            map = (fn) => (x) => x.map(fn),
+            trim = (s) => s.trim(),
+            pluck = (p) => map(prop(p)),
+            split = (x) => (s) => s.split(x),
+            concat = (x) => (y) => x.concat(y),
+            anyPass = (fns) => (x) => fns.reduce((value, fn) => value || fn(x), false),
+            getPatterns = () =>
+              ssm.getParameter({Name: LogGroupPatternsParameterStorePath}).promise()
+                // .then(tap(console.log))
+                .then(path(['Parameter', 'Value']))
+                .then(split(','))
+                .then(map(trim))
+                .catch(pipe([
+                  tap(console.warn),
+                  () => (['^$']), // match empty string, i.e. match nothing
+                ]))
+                .then(tap(console.log)),
+            toRegExp = (str) => new RegExp(str),
+            test = (re) => (str) => re.test(str),
+            patternsToFunctions = map(pipe([ toRegExp, test ])),
+            tap = (fn) => (x) => { fn(x); return x; },
+            getLogGroups = (nextToken) =>
+              cwl.describeLogGroups({ nextToken }).promise()
+                .then(({ logGroups, nextToken}) =>
+                  !nextToken
+                    ? logGroups
+                    : getLogGroups(nextToken).then(concat(logGroups))),
+            getLogGroupsAndPatterns = () =>
+              Promise.all([ getLogGroups().then(pluck('logGroupName')), getPatterns() ]),
+            filterLogGroups = ([ logGroupNames, patterns ]) =>
+              pipe([
+                reject(test(/^\/aws\/lambda\/Sniffles-/)), // if anything in the Sniffle pipeline gets into the pipeline we'll get a feedback loop
+                filter(anyPass(patternsToFunctions(patterns))),
+              ])(logGroupNames),
+            subscribeLogGroup = (logGroupName) =>
+              cwl.putSubscriptionFilter({
+                logGroupName,
+                roleArn: CloudwatchRole,
+                filterPattern: '',
+                filterName: 'LogsToKinesis',
+                destinationArn: KinesisStream,
+                distribution: 'Random',
+              }).promise()
+                .catch(console.warn) // trying to subscribe more than one subscription will fail, log and ignore
+          exports.handler = (event) =>
+            getLogGroupsAndPatterns()
+              .then(filterLogGroups)
+              .then(tap(console.log))
+              .then(map(subscribeLogGroup))
+              .then(Promise.all.bind(Promise))
+              .then(() => 'OK')
+              .catch(console.error)
+      Environment:
+        Variables:
+          CloudwatchRole: !Ref CloudwatchRole
+          KinesisStream: !Ref KinesisStream
+          LogGroupPatternsParameterStorePath: !Sub "/${LogGroupPatternsParameterStorePath}"
+      Handler: index.handler
+      MemorySize: 128
+      Timeout: 30
+      Role: !Sub ${LambdaExecutionRole.Arn}
+      FunctionName: !Sub "${AWS::StackName}"
+      Description: !Sub "${AWS::StackName}"
+      Runtime: nodejs12.x
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}"
+      RetentionInDays: 30
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: MyPermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'iam:PassRole'
+                Resource:
+                  - !Ref CloudwatchRole
+              - Effect: Allow
+                Action:
+                  - 'logs:DescribeLogGroups'
+                  - 'logs:DescribeSubscriptionFilters'
+                  - 'logs:PutSubscriptionFilter'
+                Resource:
+                  - '*'
+              - Effect: Allow
+                Action:
+                  - 'ssm:GetParameter'
+                  - 'ssm:GetParameters'
+                  - 'ssm:GetParametersByPath'
+                Resource:
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${LogGroupPatternsParameterStorePath}'
+  Schedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: "Triggers the lambda function that checks if there are cloudwatch log groups that needs to be subscribed to Sniffles"
+      Name: !Sub "${AWS::StackName}"
+      ScheduleExpression: "rate(15 minutes)"
+      State: ENABLED
+      Targets:
+        - Arn: !Sub "${Lambda.Arn}"
+          Id: TheLambda
+  LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:invokeFunction
+      FunctionName: !Ref Lambda
+      Principal: events.amazonaws.com
+      SourceArn: !Sub "${Schedule.Arn}"
+
+Outputs:
+  TemplateID:
+    Description: Template reference name
+    Value: 'log-subscriber'
+  Region:
+    Description: 'Region where stack is deployed'
+    Value: !Sub '${AWS::Region}'
+  StackName:
+    Description: 'Stack name.'
+    Value: !Sub '${AWS::StackName}'

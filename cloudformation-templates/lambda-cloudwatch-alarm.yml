@@ -1,0 +1,85 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Sniffles Lambda Cloudwatch alarm module
+
+Parameters:
+  LogGroupName:
+    Type: String
+  FunctionName:
+    Type: String
+  SnsTopic:
+    Type: String
+  ProjectKey:
+    Type: String
+    Description: ProjectKey is included in the alarm, e.g. CADINT, COPSAWS, PN
+  EvaluationPeriods:
+    Type: String
+    Default: '1'
+  DatapointsToAlarm:
+    Type: String
+    Default: '1'
+
+Resources:
+  FunctionLogErrorsMetricFilter:
+    Type: 'AWS::Logs::MetricFilter'
+    Properties:
+      FilterPattern: '"ERROR"'
+      LogGroupName:
+        Ref: LogGroupName
+      MetricTransformations:
+        - MetricValue: 1
+          MetricNamespace: sniffles-logerrors
+          MetricName: !Ref FunctionName
+  FunctionLogErrorsAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      Namespace: sniffles-logerrors
+      MetricName: !Ref FunctionName
+      AlarmName: !Sub "[${ProjectKey}] ${FunctionName} logged an error"
+      AlarmDescription: !Sub "[${ProjectKey}] The lambda function ${FunctionName} in ${AWS::AccountId} logged an error. https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#logsV2:log-groups/log-group/$252Faws$252Flambda$252F${FunctionName}/log-events$3FfilterPattern$3D$2522ERROR$2522 "
+      Threshold: 1
+      Period: 60
+      EvaluationPeriods: !Ref EvaluationPeriods
+      DatapointsToAlarm: !Ref DatapointsToAlarm
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref SnsTopic
+      Dimensions: []
+      TreatMissingData: missing
+      Statistic: Sum
+  FunctionThrottlesAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      Namespace: AWS/Lambda
+      MetricName: Throttles
+      AlarmName: !Sub "[${ProjectKey}] ${FunctionName} was throttled"
+      AlarmDescription: !Sub "[${ProjectKey}] The lambda function ${FunctionName} in ${AWS::AccountId} was throttled. https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#logsV2:log-groups/log-group/$252Faws$252Flambda$252F${FunctionName}"
+      Threshold: 1
+      Period: 60
+      EvaluationPeriods: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref SnsTopic
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref FunctionName
+      TreatMissingData: missing
+      Statistic: Sum
+  FunctionErrorsAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      AlarmName: !Sub "[${ProjectKey}] ${FunctionName} exited with an error"
+      AlarmDescription: !Sub "[${ProjectKey}] The lambda function ${FunctionName} in ${AWS::AccountId} exited with an error. https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#logsV2:log-groups/log-group/$252Faws$252Flambda$252F${FunctionName}"
+      Threshold: 1
+      Period: 60
+      EvaluationPeriods: !Ref EvaluationPeriods
+      DatapointsToAlarm: !Ref DatapointsToAlarm
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref SnsTopic
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref FunctionName
+      TreatMissingData: missing
+      Statistic: Sum

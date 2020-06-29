@@ -1,0 +1,12 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Sniffles Cloudwatch Topic module
+
+Resources:
+  SnsTopic:
+    Type: "AWS::SNS::Topic"
+    Properties:
+      DisplayName: !Sub "${AWS::StackName}"
+
+Outputs:
+  SnsTopic:
+    Value: !Ref SnsTopic

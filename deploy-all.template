@@ -1,0 +1,286 @@
+#!/bin/sh
+
+# The stack name suffix will get appended to the cloudformation stacks deployed by this script.
+STACK_NAME_SUFFIX=""
+
+# Logs that match these patterns will get forwarded to the SNS topic.
+# Leave empty to not upload a whitelist.
+# It's a comma separated string, e.g. ERROR,"level": ?"ERROR"
+LOG_WHITELIST=""
+
+# Where in Systems Manager Parameter Store the log whitelist patterns are stored.
+# No leading slash.
+WHITELIST_PATH="sniffles/default/whitelist"
+
+# You can insert a descriptive message for the logs that get through the whitelist.
+# e.g. "Error logged"
+ERROR_MESSAGE=""
+
+# Log groups that match these patterns will get auto subscribed to Sniffles.
+# Leave empty to not upload a log group whitelist.
+# It's a comma separated string, e.g. ^/aws/lambda/.*-prod.*$
+LOG_GROUPS_WHITELIST=""
+
+# Where in Systems Manager Parameter Store the log group whitelist patterns are stored.
+# Leave empty to disable automatic log group subscribing.
+# No leading slash.
+LOG_GROUPS_PATH="sniffles/default/logGroupPatterns"
+
+# Which Slack channel alerts should be posted to.
+# Leave empty to disable alerts to Slack.
+SLACK_CHANNEL=""
+
+# The Slack token used to send alerts to Slack. Will get stored encrypted in parameter store.
+# Leave empty to not upload a Slack token.
+SLACK_TOKEN=""
+
+# The KMS key that will get used to encrypt the slack token.
+# Normally arn:aws:kms:<region>:<account-id>:alias/ssm
+SLACK_TOKEN_KEY=""
+
+# Where in Systems Manager Parameter Store the Slack token is stored.
+# No leading slash.
+SLACK_TOKEN_PATH="sniffles/default/slack"
+
+# The Opsgenie SNS endpoint.
+# Leave empty to disable Opsgenie alerts.
+# https://api.opsgenie.com/v1/json/cloudwatch?apiKey=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+SNS_OPSGENIE_ENDPOINT=""
+
+# The Opsgenie CloudWatch endpoint.
+# Leave empty to disable Opsgenie alerts.
+# https://api.opsgenie.com/v1/json/amazonsns?apiKey=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+CLOUDWATCH_OPSGENIE_ENDPOINT=""
+
+# The S3 bucket to hold Sniffles resources.
+# Used for the Slack lambda.
+RESOURCES_S3_BUCKET=""
+
+# The S3 key where to find the Slack lambda in the resources S3 bucket.
+SLACK_LAMBDA_S3_KEY=""
+
+# If Yes, will create the S3 bucket, build and upload the Slack lambda.
+# If anything else, assumes the S3 bucket exists and that the Slack lambda code is uploaded to it.
+UPLOAD_SLACK_LAMBDA="No"
+
+# Slack workspace ID to send CloudWatch alarms to.
+SLACK_WORKSPACE_ID=""
+
+# Slack channel ID to send CloudWatch alarms to.
+# Leave empty to disable alerts to Slack.
+SLACK_CHANNEL_ID=""
+
+# CloudWatch alarms
+EVALUATION_PERIODS="1"
+
+# CloudWatch alarms
+DATAPOINTS_TO_ALARM="1"
+
+# Project name
+PROJECT=""
+
+# jira project key
+PROJECT_KEY=""
+
+# jira ticket
+SETUP_REQUEST=""
+
+# e.g. Dev, Test, Production
+ENVIRONMENT=""
+
+# e.g. Weekday, 24/7
+SLA="Weekday"
+
+###
+# STOP EDITING!
+###
+
+FULL_STACK_NAME_CORE="Sniffles-Core-$STACK_NAME_SUFFIX"
+FULL_STACK_NAME_LOGSUBSCRIBER="Sniffles-LogSubscriber-$STACK_NAME_SUFFIX"
+FULL_STACK_NAME_OPSGENIE="Sniffles-Opsgenie-$STACK_NAME_SUFFIX"
+FULL_STACK_NAME_ASSETS="Sniffles-Assets"
+FULL_STACK_NAME_SLACK="Sniffles-Slack-$STACK_NAME_SUFFIX"
+FULL_STACK_NAME_CLOUDWATCH="Sniffles-Cloudwatch-$STACK_NAME_SUFFIX"
+FULL_STACK_NAME_OPSGENIE_CLOUDWATCH="Sniffles-Opsgenie-Cloudwatch-$STACK_NAME_SUFFIX"
+FULL_STACK_NAME_CHATBOT="Sniffles-Chatbot-$STACK_NAME_SUFFIX"
+FULL_STACK_NAME_CORE_LAMBDA="Sniffles-Lambda-Cloudwatch-Alarm-Core-$STACK_NAME_SUFFIX"
+FULL_STACK_NAME_SLACK_LAMBDA="Sniffles-Lambda-Cloudwatch-Alarm-Slack-$STACK_NAME_SUFFIX"
+FULL_STACK_NAME_LOGSUBSCRIBER_LAMBDA="Sniffles-Lambda-Cloudwatch-Alarm-LogSubscriber-$STACK_NAME_SUFFIX"
+LOG_GROUP_NAME_CORE_LAMBDA="/aws/lambda/$FULL_STACK_NAME_CORE"
+FUNCTION_NAME_CORE_LAMBDA="$FULL_STACK_NAME_CORE"
+LOG_GROUP_NAME_SLACK_LAMBDA="/aws/lambda/$FULL_STACK_NAME_SLACK"
+FUNCTION_NAME_SLACK_LAMBDA="$FULL_STACK_NAME_SLACK"
+LOG_GROUP_NAME_LOGSUBSCRIBER_LAMBDA="/aws/lambda/$FULL_STACK_NAME_LOGSUBSCRIBER"
+FUNCTION_NAME_LOGSUBSCRIBER_LAMBDA="$FULL_STACK_NAME_LOGSUBSCRIBER"
+EXISTING_KINESIS=""
+EXISTING_SNS=""
+
+###
+# CORE
+###
+
+if [ -n $LOG_WHITELIST ]; then
+  aws ssm put-parameter \
+    --name "/$WHITELIST_PATH" \
+    --value "${LOG_WHITELIST}" \
+    --type String \
+    --overwrite
+fi
+
+aws cloudformation deploy \
+  --stack-name "$FULL_STACK_NAME_CORE" \
+  --template-file ./cloudformation-templates/core.yml \
+  --parameter-overrides ProjectKey="$PROJECT_KEY" ErrorMessage="$ERROR_MESSAGE" WhitelistParameterStorePath="$WHITELIST_PATH" ExistingKinesisStream="$EXISTING_KINESIS" ExistingSnsTopic="$EXISTING_SNS" \
+  --no-fail-on-empty-changeset \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --tags Project="$PROJECT" ProjectKey="$PROJECT_KEY" Account=$(aws sts get-caller-identity | jq -r '.Account') Environment="$ENVIRONMENT" CostCenter="$PROJECT" SetupRequest="$SETUP_REQUEST" SLA="$SLA" ManagedBy=cloudformation Repo=https://github.com/enfogroup/sniffles/
+
+OUTPUTS=$(aws cloudformation describe-stacks --stack-name "$FULL_STACK_NAME_CORE" --query "Stacks[0].Outputs" --output json | jq -r '.[] | [.OutputKey, .OutputValue] | "\(.[0])=\(.[1])"')
+eval $OUTPUTS
+# echo $CloudwatchRole
+# echo $KinesisStream
+# echo $SnsTopic
+
+###
+# LOGSUBSCRIBER
+###
+
+if [ -n $LOG_GROUPS_PATH ]; then
+  if [ -n $LOG_GROUPS_WHITELIST ]; then
+    aws ssm put-parameter \
+      --name "/$LOG_GROUPS_PATH" \
+      --value "${LOG_GROUPS_WHITELIST}" \
+      --type String \
+      --overwrite
+  fi
+
+  aws cloudformation deploy \
+    --stack-name "$FULL_STACK_NAME_LOGSUBSCRIBER" \
+    --template-file ./cloudformation-templates/log-subscriber.yml \
+    --parameter-overrides CloudwatchRole="$CloudwatchRole" KinesisStream="$KinesisStream" LogGroupPatternsParameterStorePath="$LOG_GROUPS_PATH" \
+    --no-fail-on-empty-changeset \
+    --capabilities CAPABILITY_IAM \
+    --tags Project="$PROJECT" ProjectKey="$PROJECT_KEY" Account=$(aws sts get-caller-identity | jq -r '.Account') Environment="$ENVIRONMENT" CostCenter="$PROJECT" SetupRequest="$SETUP_REQUEST" SLA="$SLA" ManagedBy=cloudformation Repo=https://github.com/enfogroup/sniffles/
+fi
+
+###
+# OPSGENIE
+###
+
+if [ -n $SNS_OPSGENIE_ENDPOINT ]; then
+  aws cloudformation deploy \
+    --stack-name "$FULL_STACK_NAME_OPSGENIE" \
+    --template-file ./cloudformation-templates/opsgenie.yml \
+    --parameter-overrides SnsTopic="$SnsTopic" OpsgenieEndpoint="$SNS_OPSGENIE_ENDPOINT" \
+    --no-fail-on-empty-changeset \
+    --tags Project="$PROJECT" ProjectKey="$PROJECT_KEY" Account=$(aws sts get-caller-identity | jq -r '.Account') Environment="$ENVIRONMENT" CostCenter="$PROJECT" SetupRequest="$SETUP_REQUEST" SLA="$SLA" ManagedBy=cloudformation Repo=https://github.com/enfogroup/sniffles/
+fi
+
+###
+# SLACK
+###
+
+if [ "$UPLOAD_SLACK_LAMBDA" == "Yes" ]; then
+  aws cloudformation deploy \
+    --stack-name "$FULL_STACK_NAME_ASSETS" \
+    --template-file ./cloudformation-templates/assets.yml \
+    --parameter-overrides BucketName="$RESOURCES_S3_BUCKET" \
+    --no-fail-on-empty-changeset \
+    --tags Project="$PROJECT" ProjectKey="$PROJECT_KEY" Account=$(aws sts get-caller-identity | jq -r '.Account') Environment="$ENVIRONMENT" CostCenter="$PROJECT" SetupRequest="$SETUP_REQUEST" SLA="$SLA" ManagedBy=cloudformation Repo=https://github.com/enfogroup/sniffles/
+
+  cd slack-lambda
+  yarn install
+  yarn build
+  yarn package
+  yarn upload
+  cd ..
+fi
+
+if [ -n $SLACK_CHANNEL ]; then
+  if [ -n $SLACK_TOKEN ]; then
+    aws ssm put-parameter \
+      --name "/$SLACK_TOKEN_PATH" \
+      --value "$SLACK_TOKEN" \
+      --type SecureString \
+      --key-id "$SLACK_TOKEN_KEY" \
+      --overwrite
+  fi
+
+  aws cloudformation deploy \
+    --stack-name "$FULL_STACK_NAME_SLACK" \
+    --template-file ./cloudformation-templates/slack.yml \
+    --parameter-overrides SlackChannel="$SLACK_CHANNEL" SlackParameterStoreKey="$SLACK_TOKEN_KEY" SnsTopic="$SnsTopic" SlackParameterStorePath="$SLACK_TOKEN_PATH" S3Key="$SLACK_LAMBDA_S3_KEY" S3Bucket="$RESOURCES_S3_BUCKET" \
+    --no-fail-on-empty-changeset \
+    --capabilities CAPABILITY_IAM \
+    --tags Project="$PROJECT" ProjectKey="$PROJECT_KEY" Account=$(aws sts get-caller-identity | jq -r '.Account') Environment="$ENVIRONMENT" CostCenter="$PROJECT" SetupRequest="$SETUP_REQUEST" SLA="$SLA" ManagedBy=cloudformation Repo=https://github.com/enfogroup/sniffles/
+fi
+
+###
+# CLOUDWATCH
+###
+
+aws cloudformation deploy \
+  --stack-name "$FULL_STACK_NAME_CLOUDWATCH" \
+  --template-file ./cloudformation-templates/cloudwatch-topic.yml \
+  --no-fail-on-empty-changeset \
+  --tags Project="$PROJECT" ProjectKey="$PROJECT_KEY" Account=$(aws sts get-caller-identity | jq -r '.Account') Environment="$ENVIRONMENT" CostCenter="$PROJECT" SetupRequest="$SETUP_REQUEST" SLA="$SLA" ManagedBy=cloudformation Repo=https://github.com/enfogroup/sniffles/
+
+OUTPUTS=$(aws cloudformation describe-stacks --stack-name "$FULL_STACK_NAME_CLOUDWATCH" --query "Stacks[0].Outputs" --output json | jq -r '.[] | [.OutputKey, .OutputValue] | "\(.[0])=\(.[1])"')
+eval $OUTPUTS
+# echo $SnsTopic
+
+###
+# OPSGENIE CLOUDWATCH
+###
+
+if [ -n $CLOUDWATCH_OPSGENIE_ENDPOINT ]; then
+  aws cloudformation deploy \
+    --stack-name "$FULL_STACK_NAME_OPSGENIE_CLOUDWATCH" \
+    --template-file ./cloudformation-templates/opsgenie.yml \
+    --parameter-overrides SnsTopic="$SnsTopic" OpsgenieEndpoint="$CLOUDWATCH_OPSGENIE_ENDPOINT" \
+    --no-fail-on-empty-changeset \
+    --tags Project="$PROJECT" ProjectKey="$PROJECT_KEY" Account=$(aws sts get-caller-identity | jq -r '.Account') Environment="$ENVIRONMENT" CostCenter="$PROJECT" SetupRequest="$SETUP_REQUEST" SLA="$SLA" ManagedBy=cloudformation Repo=https://github.com/enfogroup/sniffles/
+fi
+
+###
+# CHATBOT
+###
+
+if [ -n $SLACK_CHANNEL_ID ]; then
+  aws cloudformation deploy \
+    --stack-name "$FULL_STACK_NAME_CHATBOT" \
+    --template-file ./cloudformation-templates/chatbot.yml \
+    --parameter-overrides SnsTopic="$SnsTopic" SlackChannelId="$SLACK_CHANNEL_ID" SlackWorkspaceId="$SLACK_WORKSPACE_ID" \
+    --capabilities CAPABILITY_IAM \
+    --no-fail-on-empty-changeset \
+    --tags Project="$PROJECT" ProjectKey="$PROJECT_KEY" Account=$(aws sts get-caller-identity | jq -r '.Account') Environment="$ENVIRONMENT" CostCenter="$PROJECT" SetupRequest="$SETUP_REQUEST" SLA="$SLA" ManagedBy=cloudformation Repo=https://github.com/enfogroup/sniffles/
+fi
+
+###
+# LAMBDA CLOUDWATCH ALARM
+###
+
+aws cloudformation deploy \
+  --stack-name "$FULL_STACK_NAME_CORE_LAMBDA" \
+  --template-file ./cloudformation-templates/lambda-cloudwatch-alarm.yml \
+  --parameter-overrides SnsTopic="$SnsTopic" LogGroupName="$LOG_GROUP_NAME_CORE_LAMBDA" FunctionName="$FUNCTION_NAME_CORE_LAMBDA" EvaluationPeriods="$EVALUATION_PERIODS" DatapointsToAlarm="$DATAPOINTS_TO_ALARM" ProjectKey="$PROJECT_KEY" \
+  --no-fail-on-empty-changeset \
+  --tags Project="$PROJECT" ProjectKey="$PROJECT_KEY" Account=$(aws sts get-caller-identity | jq -r '.Account') Environment="$ENVIRONMENT" CostCenter="$PROJECT" SetupRequest="$SETUP_REQUEST" SLA="$SLA" ManagedBy=cloudformation Repo=https://github.com/enfogroup/sniffles/
+
+if [ -n $SLACK_CHANNEL ]; then
+  aws cloudformation deploy \
+    --stack-name "$FULL_STACK_NAME_SLACK_LAMBDA" \
+    --template-file ./cloudformation-templates/lambda-cloudwatch-alarm.yml \
+    --parameter-overrides SnsTopic="$SnsTopic" LogGroupName="$LOG_GROUP_NAME_SLACK_LAMBDA" FunctionName="$FUNCTION_NAME_SLACK_LAMBDA" EvaluationPeriods="$EVALUATION_PERIODS" DatapointsToAlarm="$DATAPOINTS_TO_ALARM" ProjectKey="$PROJECT_KEY" \
+    --no-fail-on-empty-changeset \
+    --tags Project="$PROJECT" ProjectKey="$PROJECT_KEY" Account=$(aws sts get-caller-identity | jq -r '.Account') Environment="$ENVIRONMENT" CostCenter="$PROJECT" SetupRequest="$SETUP_REQUEST" SLA="$SLA" ManagedBy=cloudformation Repo=https://github.com/enfogroup/sniffles/
+fi
+
+if [ -n $LOG_GROUPS_PATH ]; then
+  aws cloudformation deploy \
+    --stack-name "$FULL_STACK_NAME_LOGSUBSCRIBER_LAMBDA" \
+    --template-file ./cloudformation-templates/lambda-cloudwatch-alarm.yml \
+    --parameter-overrides SnsTopic="$SnsTopic" LogGroupName="$LOG_GROUP_NAME_LOGSUBSCRIBER_LAMBDA" FunctionName="$FUNCTION_NAME_LOGSUBSCRIBER_LAMBDA" EvaluationPeriods="$EVALUATION_PERIODS" DatapointsToAlarm="$DATAPOINTS_TO_ALARM" ProjectKey="$PROJECT_KEY" \
+    --no-fail-on-empty-changeset \
+    --tags Project="$PROJECT" ProjectKey="$PROJECT_KEY" Account=$(aws sts get-caller-identity | jq -r '.Account') Environment="$ENVIRONMENT" CostCenter="$PROJECT" SetupRequest="$SETUP_REQUEST" SLA="$SLA" ManagedBy=cloudformation Repo=https://github.com/enfogroup/sniffles/
+fi

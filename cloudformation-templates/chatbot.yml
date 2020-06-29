@@ -1,0 +1,60 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Alerts to Slack
+
+Parameters:
+  SnsTopic:
+    Type: String
+  SlackChannelId:
+    Type: String
+  SlackWorkspaceId:
+    Type: String
+
+Resources:
+  ChatbotRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - chatbot.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: MyPermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'cloudwatch:Describe*'
+                  - 'cloudwatch:Get*'
+                  - 'cloudwatch:List*'
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource:
+                  - '*'
+  Chatbot:
+    Type: AWS::Chatbot::SlackChannelConfiguration
+    Properties:
+      ConfigurationName: !Sub "${AWS::StackName}"
+      IamRoleArn: !Sub "${ChatbotRole.Arn}"
+      LoggingLevel: ERROR
+      SlackChannelId: !Ref SlackChannelId
+      SlackWorkspaceId: !Ref SlackWorkspaceId
+      SnsTopicArns:
+        - !Ref SnsTopic
+
+Outputs:
+  TemplateID:
+    Description: Template reference name
+    Value: 'chatbot'
+  Region:
+    Description: 'Region where stack is deployed'
+    Value: !Sub '${AWS::Region}'
+  StackName:
+    Description: 'Stack name.'
+    Value: !Sub '${AWS::StackName}'

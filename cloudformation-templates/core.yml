@@ -1,0 +1,259 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Sniffles Core
+
+Parameters:
+  ExistingKinesisStream:
+    Type: String
+    Description: Existing Kinesis stream ARN (leave empty to create one)
+    Default: ""
+  ExistingSnsTopic:
+    Type: String
+    Description: Existing SNS topic ARN (leave empty to create one)
+    Default: ""
+  WhitelistParameterStorePath:
+    Type: String
+    Description: SSM Parameter Store path to whitelist, without leading slash
+    Default: "sniffles/default/whitelist"
+  ProjectKey:
+    Type: String
+    Description: ProjectKey is included in the alarm, e.g. CADINT, COPSAWS, PN
+  ErrorMessage:
+    Type: String
+    Description: ErrorMessage is included in the alarm, e.g. "An error was logged"
+    Default: Error logged in
+
+Conditions:
+  CreateSnsTopic:
+    Fn::Equals:
+      - !Ref ExistingSnsTopic
+      - ""
+  CreateKinesisStream:
+    Fn::Equals:
+      - !Ref ExistingKinesisStream
+      - ""
+
+Resources:
+  KinesisStream:
+    Type: AWS::Kinesis::Stream
+    Condition: CreateKinesisStream
+    Properties:
+      Name: !Sub '${AWS::StackName}'
+      ShardCount: 1
+      RetentionPeriodHours: 24
+  SnsTopic:
+    Type: "AWS::SNS::Topic"
+    Condition: CreateSnsTopic
+    Properties:
+      DisplayName: !Sub "${AWS::StackName}"
+  KinesisToLambda:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: 10
+      MaximumBatchingWindowInSeconds: 10
+      MaximumRetryAttempts: 3
+      ParallelizationFactor: 1
+      StartingPosition: LATEST
+      FunctionName: !Ref Lambda
+      Enabled: true
+      # TODO: DestinationConfig for discarded records
+      EventSourceArn:
+        Fn::If:
+          - CreateKinesisStream
+          - !Sub "${KinesisStream.Arn}"
+          - !Ref ExistingKinesisStream
+  Lambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          let lastFetch = new Date(0),
+            whitelist = []
+          const AWS = require('aws-sdk'),
+            { inspect } = require('util'),
+            { gunzipSync } = require('zlib'),
+            ssm = new AWS.SSM(),
+            sns = new AWS.SNS(),
+            { AccountId, ErrorMessage, ProjectKey, TopicArn, WhitelistParameterStorePath } = process.env,
+            // TODO: Message Attributes configurable?
+            pipe = (steps) => (data) => steps.reduce((value, fn) => fn(value), data),
+            prop = (p) => (o) => o && o[p],
+            path = (ps) => (o) => ps.reduce((val, p) => prop(p)(val), o),
+            pathSatisfies = (pred) => (p) => pipe([ path(p), pred ]),
+            filter = (fn) => (x) => x.filter(fn),
+            map = (fn) => (x) => x.map(fn),
+            trim = (s) => s.trim(),
+            split = (x) => (s) => s.split(x),
+            unnest = (x) => [].concat(...x),
+            chain = (fn) => pipe([ map(fn), unnest ]),
+            // allPass = (fns) => (x) => fns.reduce((value, fn) => value && fn(x), true),
+            anyPass = (fns) => (x) => fns.reduce((value, fn) => value || fn(x), false),
+            take = (n) => (x) => x.slice(0, n),
+            secondsAgo = (n) => new Date(new Date()-n*1000),
+            getWhitelist = () =>
+              lastFetch < secondsAgo(60)
+                ? ssm.getParameter({Name: WhitelistParameterStorePath}).promise()
+                    // .then(tap(console.log))
+                    .then(path(['Parameter', 'Value']))
+                    .then(split(','))
+                    .then(map(trim))
+                    .catch(pipe([
+                      tap(console.warn),
+                      () => (['.*']), // whitelist everything
+                    ]))
+                    .then((wl) => {
+                      lastFetch = new Date()
+                      whitelist = wl
+                      return whitelist
+                    })
+                  : Promise.resolve(whitelist),
+            toRegExp = (str) => new RegExp(str),
+            test = (re) => (str) => re.test(str),
+            whitelistFns = map(pipe([ toRegExp, test ]))(whitelist),
+            tap = (fn) => (x) => { fn(x); return x; },
+            base64decode = (str) => Buffer.from(str, 'base64'),
+            unzip = (buf) => {
+              try {
+                return gunzipSync(buf)
+              } catch {
+                return buf
+              }
+            },
+            toString = (x) => x.toString(),
+            parseRecord = pipe([
+              path(['kinesis', 'data']),
+              base64decode,
+              unzip,
+              toString,
+              JSON.parse,
+              (m) => map((logEvent) => ({ ...m, logEvents: [logEvent] }))(m.logEvents),
+            ]),
+            publishLog = (log) =>
+              sns.publish({
+                TopicArn,
+                Message: JSON.stringify(log),
+                Subject: take(100)(`[${ProjectKey}] ${ErrorMessage} ${AccountId} ${log.logGroup}`),
+                MessageAttributes: {
+                  eventType: { DataType: 'String', StringValue: 'create' },
+                  tags: { DataType: 'String', StringValue: ProjectKey },
+                },
+              }).promise()
+          exports.handler = (event) =>
+            getWhitelist()
+              // .then(tap(console.log))
+              .then(map(pipe([ toRegExp, test ])))
+              .then((whitelistFns) => pipe([
+                prop('Records'),
+                chain(parseRecord),
+                // tap((x) => console.log(inspect(x, {depth: Infinity}))),
+                filter(pathSatisfies(anyPass(whitelistFns))(['logEvents', 0, 'message'])),
+                tap((x) => console.log(`Found ${x.length} entries`)),
+                map(publishLog),
+                Promise.all.bind(Promise),
+              ])(event))
+              // .then(tap(console.log))
+              .then(() => 'OK')
+              .catch(console.error)
+      Environment:
+        Variables:
+          AccountId: !Sub "${AWS::AccountId}"
+          ErrorMessage: !Ref ErrorMessage
+          ProjectKey: !Ref ProjectKey
+          WhitelistParameterStorePath: !Sub "/${WhitelistParameterStorePath}"
+          TopicArn:
+            Fn::If:
+              - CreateSnsTopic
+              - !Ref SnsTopic
+              - !Ref ExistingSnsTopic
+      Handler: index.handler
+      MemorySize: 128
+      Timeout: 30
+      Role: !Sub ${LambdaExecutionRole.Arn}
+      FunctionName: !Sub "${AWS::StackName}"
+      Description: !Sub "${AWS::StackName}"
+      Runtime: nodejs12.x
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}"
+      RetentionInDays: 30
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: MyPermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: "Allow"
+                Resource:
+                  Fn::If:
+                    - CreateKinesisStream
+                    - !Sub "${KinesisStream.Arn}"
+                    - !Ref ExistingKinesisStream
+                Action:
+                  - "kinesis:DescribeStream"
+                  - "kinesis:DescribeStreamSummary"
+                  - "kinesis:GetRecords"
+                  - "kinesis:GetShardIterator"
+                  - "kinesis:ListShards"
+                  - "kinesis:ListStreams"
+                  - "kinesis:SubscribeToShard"
+              - Effect: Allow
+                Action:
+                  - 'sns:Publish'
+                Resource:
+                  Fn::If:
+                    - CreateSnsTopic
+                    - !Ref SnsTopic
+                    - !Ref ExistingSnsTopic
+              - Effect: Allow
+                Action:
+                  - 'ssm:GetParameter'
+                  - 'ssm:GetParameters'
+                  - 'ssm:GetParametersByPath'
+                Resource:
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${WhitelistParameterStorePath}'
+  CloudWatchLogsRole:
+    Type: AWS::IAM::Role
+    Condition: CreateKinesisStream
+    Properties:
+      RoleName: !Sub "CloudwatchRole-${AWS::StackName}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - logs.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: MyPermissions
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - kinesis:PutRecords
+                  - kinesis:PutRecord
+                Resource:
+                  - !Sub "${KinesisStream.Arn}"
+
+Outputs:
+  KinesisStream:
+    Value: !Sub '${KinesisStream.Arn}'
+  SnsTopic:
+    Value: !Ref SnsTopic
+  CloudwatchRole:
+    Value: !Sub '${CloudWatchLogsRole.Arn}'
