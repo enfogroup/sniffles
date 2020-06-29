@@ -1,0 +1,93 @@
+{
+  "name": "core-lambda",
+  "version": "1.0.0",
+  "main": "src/",
+  "license": "MIT",
+  "scripts": {
+    "build": "webpack-cli",
+    "package": "zip -j -r dist/core.zip dist/index.js",
+    "upload": "aws s3 cp --acl public-read dist/core.zip s3://$RESOURCES_S3_BUCKET/$CORE_LAMBDA_S3_KEY",
+    "jest": "jest",
+    "test": "npm-run-all -s lint jest",
+    "test-watch": "jest --watch",
+    "lint": "eslint 'src/**/*.ts' 'test/**/*.ts'"
+  },
+  "dependencies": {
+    "jspath": "^0.4.0",
+    "ramda": "^0.27.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.57",
+    "@types/aws-sdk": "^2.7.0",
+    "@types/jest": "^26.0.3",
+    "@types/jspath": "^0.4.0",
+    "@types/node": "12.x",
+    "@types/ramda": "^0.27.6",
+    "@typescript-eslint/eslint-plugin": "^3.3.0",
+    "@typescript-eslint/parser": "^3.3.0",
+    "aws-sdk": "^2.706.0",
+    "esbuild-loader": "^1.1.0",
+    "eslint": "^7.3.1",
+    "eslint-config-standard": "14.1.1",
+    "eslint-config-standard-pure-fp": "^2.0.1",
+    "eslint-plugin-better": "^0.1.5",
+    "eslint-plugin-fp": "^2.3.0",
+    "eslint-plugin-import": "^2.22.0",
+    "eslint-plugin-node": "^11.1.0",
+    "eslint-plugin-promise": "^4.1.1",
+    "eslint-plugin-security": "1.4.0",
+    "eslint-plugin-standard": "4.0.1",
+    "jest": "^26.1.0",
+    "npm-run-all": "^4.1.5",
+    "ts-jest": "^26.1.0",
+    "typescript": "^3.9.5",
+    "webpack": "^4.43.0",
+    "webpack-cli": "^3.3.12"
+  },
+  "eslintConfig": {
+    "parser": "@typescript-eslint/parser",
+    "parserOptions": {
+      "project": "./tsconfig.json"
+    },
+    "plugins": [
+      "@typescript-eslint",
+      "security"
+    ],
+    "extends": [
+      "eslint:recommended",
+      "plugin:security/recommended",
+      "standard"
+    ],
+    "rules": {
+      "array-bracket-spacing": [
+        "error",
+        "always"
+      ],
+      "comma-dangle": [
+        "error",
+        {
+          "arrays": "always-multiline",
+          "objects": "always-multiline"
+        }
+      ],
+      "one-var": "off",
+      "no-unused-vars": "off",
+      "no-console": "off"
+    }
+  },
+  "jest": {
+    "transform": {
+      "^.+\\.ts$": "ts-jest"
+    },
+    "testRegex": "/test/.*\\.ts$",
+    "modulePathIgnorePatterns": [
+      "<rootDir>/dist"
+    ],
+    "moduleFileExtensions": [
+      "ts",
+      "js",
+      "json",
+      "node"
+    ]
+  }
+}

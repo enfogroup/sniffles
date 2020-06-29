@@ -3,6 +3,17 @@
 # The stack name suffix will get appended to the cloudformation stacks deployed by this script.
 STACK_NAME_SUFFIX=""
 
+# If Yes, will deploy the assets module and upload lambdas to it.
+# If anything else, assumes the assets bucket exists, and lambdas have been uploaded to it.
+DEPLOY_ASSETS_MODULE="No"
+
+# The S3 bucket to hold Sniffles resources.
+# Used for the Slack lambda.
+RESOURCES_S3_BUCKET=""
+
+# The S3 key where to find the Slack lambda in the resources S3 bucket.
+CORE_LAMBDA_S3_KEY=""
+
 # Logs that match these patterns will get forwarded to the SNS topic.
 # Leave empty to not upload a whitelist.
 # It's a comma separated string, e.g. ERROR,"level": ?"ERROR"
@@ -52,16 +63,8 @@ SNS_OPSGENIE_ENDPOINT=""
 # https://api.opsgenie.com/v1/json/amazonsns?apiKey=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 CLOUDWATCH_OPSGENIE_ENDPOINT=""
 
-# The S3 bucket to hold Sniffles resources.
-# Used for the Slack lambda.
-RESOURCES_S3_BUCKET=""
-
 # The S3 key where to find the Slack lambda in the resources S3 bucket.
 SLACK_LAMBDA_S3_KEY=""
-
-# If Yes, will create the S3 bucket, build and upload the Slack lambda.
-# If anything else, assumes the S3 bucket exists and that the Slack lambda code is uploaded to it.
-UPLOAD_SLACK_LAMBDA="No"
 
 # Slack workspace ID to send CloudWatch alarms to.
 SLACK_WORKSPACE_ID=""
@@ -116,6 +119,35 @@ EXISTING_KINESIS=""
 EXISTING_SNS=""
 
 ###
+# ASSETS
+###
+
+if [ "$DEPLOY_ASSETS_MODULE" == "Yes" ]; then
+  aws cloudformation deploy \
+    --stack-name "$FULL_STACK_NAME_ASSETS" \
+    --template-file ./cloudformation-templates/assets.yml \
+    --parameter-overrides BucketName="$RESOURCES_S3_BUCKET" \
+    --no-fail-on-empty-changeset \
+    --tags Project="$PROJECT" ProjectKey="$PROJECT_KEY" Account=$(aws sts get-caller-identity | jq -r '.Account') Environment="$ENVIRONMENT" CostCenter="$PROJECT" SetupRequest="$SETUP_REQUEST" SLA="$SLA" ManagedBy=cloudformation Repo=https://github.com/enfogroup/sniffles/
+
+  cd core-lambda
+  yarn install
+  yarn test
+  yarn build
+  yarn package
+  yarn upload
+  cd ..
+
+  cd slack-lambda
+  yarn install
+  yarn test
+  yarn build
+  yarn package
+  yarn upload
+  cd ..
+fi
+
+###
 # CORE
 ###
 
@@ -130,7 +162,7 @@ fi
 aws cloudformation deploy \
   --stack-name "$FULL_STACK_NAME_CORE" \
   --template-file ./cloudformation-templates/core.yml \
-  --parameter-overrides ProjectKey="$PROJECT_KEY" ErrorMessage="$ERROR_MESSAGE" WhitelistParameterStorePath="$WHITELIST_PATH" ExistingKinesisStream="$EXISTING_KINESIS" ExistingSnsTopic="$EXISTING_SNS" \
+  --parameter-overrides ProjectKey="$PROJECT_KEY" ErrorMessage="$ERROR_MESSAGE" WhitelistParameterStorePath="$WHITELIST_PATH" ExistingKinesisStream="$EXISTING_KINESIS" ExistingSnsTopic="$EXISTING_SNS" S3Bucket="$RESOURCES_S3_BUCKET" S3Key="$CORE_LAMBDA_S3_KEY" \
   --no-fail-on-empty-changeset \
   --capabilities CAPABILITY_NAMED_IAM \
   --tags Project="$PROJECT" ProjectKey="$PROJECT_KEY" Account=$(aws sts get-caller-identity | jq -r '.Account') Environment="$ENVIRONMENT" CostCenter="$PROJECT" SetupRequest="$SETUP_REQUEST" SLA="$SLA" ManagedBy=cloudformation Repo=https://github.com/enfogroup/sniffles/
@@ -179,22 +211,6 @@ fi
 ###
 # SLACK
 ###
-
-if [ "$UPLOAD_SLACK_LAMBDA" == "Yes" ]; then
-  aws cloudformation deploy \
-    --stack-name "$FULL_STACK_NAME_ASSETS" \
-    --template-file ./cloudformation-templates/assets.yml \
-    --parameter-overrides BucketName="$RESOURCES_S3_BUCKET" \
-    --no-fail-on-empty-changeset \
-    --tags Project="$PROJECT" ProjectKey="$PROJECT_KEY" Account=$(aws sts get-caller-identity | jq -r '.Account') Environment="$ENVIRONMENT" CostCenter="$PROJECT" SetupRequest="$SETUP_REQUEST" SLA="$SLA" ManagedBy=cloudformation Repo=https://github.com/enfogroup/sniffles/
-
-  cd slack-lambda
-  yarn install
-  yarn build
-  yarn package
-  yarn upload
-  cd ..
-fi
 
 if [ -n $SLACK_CHANNEL ]; then
   if [ -n $SLACK_TOKEN ]; then

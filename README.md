@@ -57,6 +57,28 @@ To deploy individual pieces you simply deploy the corresponding module.
 
 ## Modules
 
+### Assets module
+
+Sniffles assets storage (an S3 bucket).
+
+![overview](./img/assets-module.png)
+
+#### Configuration
+
+##### Parameters
+
+`BucketName` - String
+Name of the S3 bucket to create
+
+#### Deploy
+
+```sh
+aws cloudformation deploy \
+  --stack-name "<stackname>" \
+  --template-file ./cloudformation-templates/assets.yml \
+  --parameter-overrides <parameters>
+```
+
 ### Sniffles Core
 
 ![overview](./img/core.png)
@@ -80,11 +102,17 @@ Will appear in the Subject of the SNS Message
 `ErrorMessage` - String  
 Will appear in the Subject of the SNS Message
 
+`S3Bucket` - String  
+Assets bucket
+
+`S3Key` - String  
+Location of the lambda code
+
 ##### Parameter Store
 
 ###### Whitelist
 
-A comma separated string of regular expressions.
+A comma separated string of either [regular expressions](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions) or [jspath](https://github.com/dfilatov/jspath)s.
 
 Examples:
 
@@ -92,17 +120,17 @@ Examples:
 ERROR
 ```
 
-Any log that contains ERROR
+Any log that contains `ERROR`
 
 ```
 \sERROR\s
 ```
-Any log that contains ERROR surrounded by white space.
+Any log that contains `ERROR` surrounded by white space.
 
 ```
-ERROR, "level":"error"
+ERROR, { .level === "error" }
 ```
-Any log that contains ERROR or "level":"error"
+Any log that contains `ERROR` or a JSON object with a property named `level` that has a value of `error`.
 
 #### Deploy
 
@@ -112,29 +140,6 @@ aws cloudformation deploy \
   --template-file ./cloudformation-templates/core.yml \
   --parameter-overrides <parameters> \
   --capabilities CAPABILITY_NAMED_IAM
-```
-
-
-### Assets module
-
-Sniffles assets storage (an S3 bucket).
-
-![overview](./img/assets-module.png)
-
-#### Configuration
-
-##### Parameters
-
-`BucketName` - String
-Name of the S3 bucket to create
-
-#### Deploy
-
-```sh
-aws cloudformation deploy \
-  --stack-name "<stackname>" \
-  --template-file ./cloudformation-templates/assets.yml \
-  --parameter-overrides <parameters>
 ```
 
 ### Slack module
@@ -158,6 +163,12 @@ The KMS Key ID/Alias with which the Slack token is encrypted
 
 `SlackChannel` - String  
 The Slack channel to notify in
+
+`S3Bucket` - String  
+Assets bucket
+
+`S3Key` - String  
+Location of the lambda code
 
 #### Deploy
 
