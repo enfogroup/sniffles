@@ -16,7 +16,7 @@ CORE_LAMBDA_S3_KEY=""
 
 # Logs that match these patterns will get forwarded to the SNS topic.
 # Leave empty to not upload a whitelist.
-# It's a comma separated string, e.g. /ERROR/i,{ .level === "ERROR" },string-match
+# It's a comma separated string, e.g. "/ERROR/i,{ .level === \"ERROR\" },string-match"
 LOG_WHITELIST=""
 
 # Where in Systems Manager Parameter Store the log whitelist patterns are stored.
