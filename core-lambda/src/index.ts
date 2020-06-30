@@ -114,6 +114,7 @@ const
       MessageAttributes: {
         eventType: { DataType: 'String', StringValue: 'create' },
         tags: { DataType: 'String', StringValue: ProjectKey },
+        JiraProjectKey: { DataType: 'String', StringValue: ProjectKey },
       },
     }).promise()
 
