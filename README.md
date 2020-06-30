@@ -31,7 +31,7 @@ Prerequisites:
 - [yarn](https://yarnpkg.com/)
 
 1. If you want to use the Chatbot integration, [set up chatbot with slack](https://docs.aws.amazon.com/chatbot/latest/adminguide/getting-started.html#slack-setup)
-1. If you want to use the Slack lambda integration, [set up a Slack app](https://api.slack.com/apps) with chat:write and file:write permissions in your workspace
+1. If you want to use the Slack lambda integration, [set up a Slack app](https://api.slack.com/apps) with chat:write and files:write permissions in your workspace
 1. Clone this repo
 1. Assume into the AWS account you want to deploy to
 1. `cp deploy-all.{template,sh}`
