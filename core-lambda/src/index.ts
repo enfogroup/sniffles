@@ -1,5 +1,6 @@
 import { KinesisStreamEvent, KinesisStreamRecord } from 'aws-lambda'
 import { SNS, SSM } from 'aws-sdk'
+import { Option, tryCatch as optTryCatch, chain as optchain, map as optmap, getOrElse as optGetOrElse, none, some } from 'fp-ts/lib/Option'
 import { apply as jspathApply } from 'jspath'
 import always from 'ramda/src/always'
 import anyPass from 'ramda/src/anyPass'
@@ -11,7 +12,9 @@ import filter from 'ramda/src/filter'
 import flip from 'ramda/src/flip'
 import gt from 'ramda/src/gt'
 import head from 'ramda/src/head'
+import ifElse from 'ramda/src/ifElse'
 import includes from 'ramda/src/includes'
+import isEmpty from 'ramda/src/isEmpty'
 import length from 'ramda/src/length'
 import map from 'ramda/src/map'
 import match from 'ramda/src/match'
@@ -22,6 +25,7 @@ import prop from 'ramda/src/prop'
 import split from 'ramda/src/split'
 import startsWith from 'ramda/src/startsWith'
 import T from 'ramda/src/T'
+import tail from 'ramda/src/tail'
 import take from 'ramda/src/take'
 import tap from 'ramda/src/tap'
 import test from 'ramda/src/test'
@@ -70,6 +74,18 @@ const
           return whitelist
         })
       : Promise.resolve(whitelist),
+  groupMatch = (re: RegExp) =>
+    pipe<string, string[], Option<string[]>>(
+      match(re),
+      ifElse(
+        isEmpty,
+        () => none,
+        pipe<string[], string[], Option<string[]>>(
+          tail,
+          some
+        )
+      )
+    ),
   toRegExp = pipe<string, string[], RegExp>(
     match(/^\/([^/]+)\/([gimsuy]*)$/),
     ([ _, re, flags ]) => new RegExp(re, flags) // eslint-disable-line security/detect-non-literal-regexp
@@ -105,13 +121,14 @@ export const
   toStringFn = includes,
   toRegExpFn = pipe<string, any, any>(toRegExp, test),
   toJspathFn = (str: string) =>
-    pipe<string, string[], string, any, any, number, boolean>(
-      match(/\t({.*})/),
-      head,
-      JSON.parse,
-      (message: any) => jspathApply(`.${str}`, message),
-      length,
-      flip(gt)(0)
+    pipe<string, Option<string[]>, Option<string>, Option<any>, Option<any[]>, Option<number>, Option<boolean>, boolean>(
+      groupMatch(/({[\s\S]+})/), // . doesn't match newlines, use [\s\S] instead
+      optmap<string[], string>(head),
+      optchain<string, any>((str: string) => optTryCatch(() => JSON.parse(str))),
+      optmap<any, any[]>((message: any) => jspathApply(`.${str}`, message)),
+      optmap<any[], number>(length),
+      optmap<number, boolean>(flip(gt)(0)),
+      optGetOrElse<boolean>(() => false)
     ),
   toWhitelistFn = cond([
     [ test(/^\/[^/]+\/[gimsuy]*$/), toRegExpFn ],

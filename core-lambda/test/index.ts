@@ -25,17 +25,20 @@ describe('index', () => {
   })
   describe('toJspathFn', () => {
     it('tests positive', () => {
-      expect(toJspathFn('{ .level === "ERROR" }')(`x\ty\t${JSON.stringify({ level: 'ERROR' })}`)).toBe(true)
+      expect(toJspathFn('{ .level === "ERROR" }')(`x\ty\t${JSON.stringify({ level: 'ERROR' }, null, 2)}\n`)).toBe(true)
     })
     it('tests negative', () => {
-      expect(toJspathFn('{ .level === "ERROR" }')(`x\ty\t${JSON.stringify({ level: 'INFO' })}`)).toBe(false)
+      expect(toJspathFn('{ .level === "ERROR" }')(`x\ty\t${JSON.stringify({ level: 'INFO' }, null, 2)}\n`)).toBe(false)
+    })
+    it('handles not JSON', () => {
+      expect(toJspathFn('{ .level === "ERROR" }')('x\ty\tblablabla')).toBe(false)
     })
   })
   describe('toWhitelistFn', () => {
     it('returns correct function', () => {
       expect.assertions(3)
       expect(toWhitelistFn('/abc$/')('x\ty\tabc')).toBe(true)
-      expect(toWhitelistFn('{ .level === "ERROR" }')(`x\ty\t${JSON.stringify({ level: 'ERROR' })}`)).toBe(true)
+      expect(toWhitelistFn('{ .level === "ERROR" }')(`x\ty\t${JSON.stringify({ level: 'ERROR' }, null, 2)}\n`)).toBe(true)
       expect(toWhitelistFn('abc')('easy\tas\tabc')).toBe(true)
     })
   })
