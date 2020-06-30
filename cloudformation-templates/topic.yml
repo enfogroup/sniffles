@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Sniffles Cloudwatch Topic module
+Description: Sniffles Topic module
 
 Resources:
   SnsTopic:

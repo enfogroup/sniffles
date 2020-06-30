@@ -79,6 +79,24 @@ aws cloudformation deploy \
   --parameter-overrides <parameters>
 ```
 
+### Topic module
+
+Sets up an SNS topic for the core lambda or CloudWatch to publish to.
+
+![overview](./img/cloudwatch-topic-module.png)
+
+#### Configuration
+
+Nope.
+
+#### Deploy
+
+```sh
+aws cloudformation deploy \
+  --stack-name "<stackname>" \
+  --template-file ./cloudformation-templates/topic.yml
+```
+
 ### Sniffles Core
 
 ![overview](./img/core.png)
@@ -90,8 +108,8 @@ aws cloudformation deploy \
 `ExistingKinesisStream` - ARN  
 If you supply this, the Kinesis Stream and the CloudWatch role won’t be created, the lambda will instead be subscribed to the existing Kinesis Stream
 
-`ExistingSnsTopic` - ARN  
-If you supply this, The SNS Topic won’t be created, and the Lambda will publish to the existing SNS
+`SnsTopic` - ARN  
+The SNS Topic to publish to
 
 `WhitelistParameterStorePath` - String  
 Where in Parameter Store the lambda should look for the whitelist. The whitelist is a comma separated string of regular expressions. Any logs that match any of the regular expressions in the whitelist will be passed on the the SNS Topic. Any non-matching logs will be discarded.
@@ -242,24 +260,6 @@ aws cloudformation deploy \
   --template-file ./cloudformation-templates/log-subscriber.yml \
   --parameter-overrides <parameters> \
   --capabilities CAPABILITY_IAM
-```
-
-### CloudWatch topic module
-
-Sets up an SNS topic for CloudWatch to publish to.
-
-![overview](./img/cloudwatch-topic-module.png)
-
-#### Configuration
-
-Nope.
-
-#### Deploy
-
-```sh
-aws cloudformation deploy \
-  --stack-name "<stackname>" \
-  --template-file ./cloudformation-templates/cloudwatch-topic.yml
 ```
 
 ### Chatbot module

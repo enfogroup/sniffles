@@ -6,10 +6,9 @@ Parameters:
     Type: String
     Description: Existing Kinesis stream ARN (leave empty to create one)
     Default: ""
-  ExistingSnsTopic:
+  SnsTopic:
     Type: String
     Description: Existing SNS topic ARN (leave empty to create one)
-    Default: ""
   WhitelistParameterStorePath:
     Type: String
     Description: SSM Parameter Store path to whitelist, without leading slash
@@ -29,10 +28,6 @@ Parameters:
     Description: Where the core lambda is located
 
 Conditions:
-  CreateSnsTopic:
-    Fn::Equals:
-      - !Ref ExistingSnsTopic
-      - ""
   CreateKinesisStream:
     Fn::Equals:
       - !Ref ExistingKinesisStream
@@ -46,11 +41,6 @@ Resources:
       Name: !Sub '${AWS::StackName}'
       ShardCount: 1
       RetentionPeriodHours: 24
-  SnsTopic:
-    Type: "AWS::SNS::Topic"
-    Condition: CreateSnsTopic
-    Properties:
-      DisplayName: !Sub "${AWS::StackName}"
   KinesisToLambda:
     Type: AWS::Lambda::EventSourceMapping
     Properties:
@@ -79,11 +69,7 @@ Resources:
           ErrorMessage: !Ref ErrorMessage
           ProjectKey: !Ref ProjectKey
           WhitelistParameterStorePath: !Sub "/${WhitelistParameterStorePath}"
-          TopicArn:
-            Fn::If:
-              - CreateSnsTopic
-              - !Ref SnsTopic
-              - !Ref ExistingSnsTopic
+          TopicArn: !Ref SnsTopic
       Handler: index.handler
       MemorySize: 128
       Timeout: 30
@@ -133,10 +119,7 @@ Resources:
                 Action:
                   - 'sns:Publish'
                 Resource:
-                  Fn::If:
-                    - CreateSnsTopic
-                    - !Ref SnsTopic
-                    - !Ref ExistingSnsTopic
+                  - !Ref SnsTopic
               - Effect: Allow
                 Action:
                   - 'ssm:GetParameter'
@@ -173,7 +156,5 @@ Resources:
 Outputs:
   KinesisStream:
     Value: !Sub '${KinesisStream.Arn}'
-  SnsTopic:
-    Value: !Ref SnsTopic
   CloudwatchRole:
     Value: !Sub '${CloudWatchLogsRole.Arn}'

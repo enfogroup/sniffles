@@ -12,6 +12,7 @@ DEPLOY_ASSETS_MODULE="No"
 RESOURCES_S3_BUCKET=""
 
 # The S3 key where to find the Slack lambda in the resources S3 bucket.
+# Leave empty to not deploy the core lambda
 CORE_LAMBDA_S3_KEY=""
 
 # Logs that match these patterns will get forwarded to the SNS topic.
@@ -26,6 +27,10 @@ WHITELIST_PATH="sniffles/default/whitelist"
 # You can insert a descriptive message for the logs that get through the whitelist.
 # e.g. "Error logged"
 ERROR_MESSAGE=""
+
+# If there's an existing SNS topic to publish to, enter the ARN here
+# Leave blank to have a new SNS topic created
+EXISTING_SNS=""
 
 # Log groups that match these patterns will get auto subscribed to Sniffles.
 # Leave empty to not upload a log group whitelist.
@@ -79,6 +84,10 @@ EVALUATION_PERIODS="1"
 # CloudWatch alarms
 DATAPOINTS_TO_ALARM="1"
 
+# If there's an existing SNS topic to publish to, enter the ARN here
+# Leave blank to have a new SNS topic created
+EXISTING_CLOUDWATCH_SNS=""
+
 # Project name
 PROJECT=""
 
@@ -103,6 +112,7 @@ FULL_STACK_NAME_LOGSUBSCRIBER="Sniffles-LogSubscriber-$STACK_NAME_SUFFIX"
 FULL_STACK_NAME_OPSGENIE="Sniffles-Opsgenie-$STACK_NAME_SUFFIX"
 FULL_STACK_NAME_ASSETS="Sniffles-Assets"
 FULL_STACK_NAME_SLACK="Sniffles-Slack-$STACK_NAME_SUFFIX"
+FULL_STACK_NAME_LOGS="Sniffles-Logs-$STACK_NAME_SUFFIX"
 FULL_STACK_NAME_CLOUDWATCH="Sniffles-Cloudwatch-$STACK_NAME_SUFFIX"
 FULL_STACK_NAME_OPSGENIE_CLOUDWATCH="Sniffles-Opsgenie-Cloudwatch-$STACK_NAME_SUFFIX"
 FULL_STACK_NAME_CHATBOT="Sniffles-Chatbot-$STACK_NAME_SUFFIX"
@@ -116,7 +126,6 @@ FUNCTION_NAME_SLACK_LAMBDA="$FULL_STACK_NAME_SLACK"
 LOG_GROUP_NAME_LOGSUBSCRIBER_LAMBDA="/aws/lambda/$FULL_STACK_NAME_LOGSUBSCRIBER"
 FUNCTION_NAME_LOGSUBSCRIBER_LAMBDA="$FULL_STACK_NAME_LOGSUBSCRIBER"
 EXISTING_KINESIS=""
-EXISTING_SNS=""
 
 ###
 # ASSETS
@@ -154,6 +163,21 @@ fi
 # CORE
 ###
 
+if [ -z "$EXISTING_SNS" ]; then
+  echo "Deploying logs topic..."
+  aws cloudformation deploy \
+    --stack-name "$FULL_STACK_NAME_LOGS" \
+    --template-file ./cloudformation-templates/topic.yml \
+    --no-fail-on-empty-changeset \
+    --tags Project="$PROJECT" ProjectKey="$PROJECT_KEY" Account=$(aws sts get-caller-identity | jq -r '.Account') Environment="$ENVIRONMENT" CostCenter="$PROJECT" SetupRequest="$SETUP_REQUEST" SLA="$SLA" ManagedBy=cloudformation Repo=https://github.com/enfogroup/sniffles/
+
+  OUTPUTS=$(aws cloudformation describe-stacks --stack-name "$FULL_STACK_NAME_LOGS" --query "Stacks[0].Outputs" --output json | jq -r '.[] | [.OutputKey, .OutputValue] | "\(.[0])=\(.[1])"')
+  eval $OUTPUTS
+  # echo $SnsTopic
+else
+  SnsTopic="$EXISTING_SNS"
+fi
+
 if [ -n "$LOG_WHITELIST" ]; then
   echo "Setting whitelist..."
   aws ssm put-parameter \
@@ -163,20 +187,21 @@ if [ -n "$LOG_WHITELIST" ]; then
     --overwrite > /dev/null
 fi
 
-echo "Deploying core..."
-aws cloudformation deploy \
-  --stack-name "$FULL_STACK_NAME_CORE" \
-  --template-file ./cloudformation-templates/core.yml \
-  --parameter-overrides ProjectKey="$PROJECT_KEY" ErrorMessage="$ERROR_MESSAGE" WhitelistParameterStorePath="$WHITELIST_PATH" ExistingKinesisStream="$EXISTING_KINESIS" ExistingSnsTopic="$EXISTING_SNS" S3Bucket="$RESOURCES_S3_BUCKET" S3Key="$CORE_LAMBDA_S3_KEY" \
-  --no-fail-on-empty-changeset \
-  --capabilities CAPABILITY_NAMED_IAM \
-  --tags Project="$PROJECT" ProjectKey="$PROJECT_KEY" Account=$(aws sts get-caller-identity | jq -r '.Account') Environment="$ENVIRONMENT" CostCenter="$PROJECT" SetupRequest="$SETUP_REQUEST" SLA="$SLA" ManagedBy=cloudformation Repo=https://github.com/enfogroup/sniffles/
+if [ -n "$CORE_LAMBDA_S3_KEY" ]; then
+  echo "Deploying core..."
+  aws cloudformation deploy \
+    --stack-name "$FULL_STACK_NAME_CORE" \
+    --template-file ./cloudformation-templates/core.yml \
+    --parameter-overrides ProjectKey="$PROJECT_KEY" ErrorMessage="$ERROR_MESSAGE" WhitelistParameterStorePath="$WHITELIST_PATH" ExistingKinesisStream="$EXISTING_KINESIS" SnsTopic="$SnsTopic" S3Bucket="$RESOURCES_S3_BUCKET" S3Key="$CORE_LAMBDA_S3_KEY" \
+    --no-fail-on-empty-changeset \
+    --capabilities CAPABILITY_NAMED_IAM \
+    --tags Project="$PROJECT" ProjectKey="$PROJECT_KEY" Account=$(aws sts get-caller-identity | jq -r '.Account') Environment="$ENVIRONMENT" CostCenter="$PROJECT" SetupRequest="$SETUP_REQUEST" SLA="$SLA" ManagedBy=cloudformation Repo=https://github.com/enfogroup/sniffles/
 
-OUTPUTS=$(aws cloudformation describe-stacks --stack-name "$FULL_STACK_NAME_CORE" --query "Stacks[0].Outputs" --output json | jq -r '.[] | [.OutputKey, .OutputValue] | "\(.[0])=\(.[1])"')
-eval $OUTPUTS
-# echo $CloudwatchRole
-# echo $KinesisStream
-# echo $SnsTopic
+  OUTPUTS=$(aws cloudformation describe-stacks --stack-name "$FULL_STACK_NAME_CORE" --query "Stacks[0].Outputs" --output json | jq -r '.[] | [.OutputKey, .OutputValue] | "\(.[0])=\(.[1])"')
+  eval $OUTPUTS
+  # echo $CloudwatchRole
+  # echo $KinesisStream
+fi
 
 ###
 # LOGSUBSCRIBER
@@ -245,16 +270,20 @@ fi
 # CLOUDWATCH
 ###
 
-echo "Deploying cloudwatch topic..."
-aws cloudformation deploy \
-  --stack-name "$FULL_STACK_NAME_CLOUDWATCH" \
-  --template-file ./cloudformation-templates/cloudwatch-topic.yml \
-  --no-fail-on-empty-changeset \
-  --tags Project="$PROJECT" ProjectKey="$PROJECT_KEY" Account=$(aws sts get-caller-identity | jq -r '.Account') Environment="$ENVIRONMENT" CostCenter="$PROJECT" SetupRequest="$SETUP_REQUEST" SLA="$SLA" ManagedBy=cloudformation Repo=https://github.com/enfogroup/sniffles/
+if [ -z "$EXISTING_CLOUDWATCH_SNS" ]; then
+  echo "Deploying cloudwatch topic..."
+  aws cloudformation deploy \
+    --stack-name "$FULL_STACK_NAME_CLOUDWATCH" \
+    --template-file ./cloudformation-templates/topic.yml \
+    --no-fail-on-empty-changeset \
+    --tags Project="$PROJECT" ProjectKey="$PROJECT_KEY" Account=$(aws sts get-caller-identity | jq -r '.Account') Environment="$ENVIRONMENT" CostCenter="$PROJECT" SetupRequest="$SETUP_REQUEST" SLA="$SLA" ManagedBy=cloudformation Repo=https://github.com/enfogroup/sniffles/
 
-OUTPUTS=$(aws cloudformation describe-stacks --stack-name "$FULL_STACK_NAME_CLOUDWATCH" --query "Stacks[0].Outputs" --output json | jq -r '.[] | [.OutputKey, .OutputValue] | "\(.[0])=\(.[1])"')
-eval $OUTPUTS
-# echo $SnsTopic
+  OUTPUTS=$(aws cloudformation describe-stacks --stack-name "$FULL_STACK_NAME_CLOUDWATCH" --query "Stacks[0].Outputs" --output json | jq -r '.[] | [.OutputKey, .OutputValue] | "\(.[0])=\(.[1])"')
+  eval $OUTPUTS
+  # echo $SnsTopic
+else
+  SnsTopic="$EXISTING_CLOUDWATCH_SNS"
+fi
 
 ###
 # OPSGENIE CLOUDWATCH
@@ -289,13 +318,15 @@ fi
 # LAMBDA CLOUDWATCH ALARM
 ###
 
-echo "Deploying cloudwatch alarm core..."
-aws cloudformation deploy \
-  --stack-name "$FULL_STACK_NAME_CORE_LAMBDA" \
-  --template-file ./cloudformation-templates/lambda-cloudwatch-alarm.yml \
-  --parameter-overrides SnsTopic="$SnsTopic" LogGroupName="$LOG_GROUP_NAME_CORE_LAMBDA" FunctionName="$FUNCTION_NAME_CORE_LAMBDA" EvaluationPeriods="$EVALUATION_PERIODS" DatapointsToAlarm="$DATAPOINTS_TO_ALARM" ProjectKey="$PROJECT_KEY" \
-  --no-fail-on-empty-changeset \
-  --tags Project="$PROJECT" ProjectKey="$PROJECT_KEY" Account=$(aws sts get-caller-identity | jq -r '.Account') Environment="$ENVIRONMENT" CostCenter="$PROJECT" SetupRequest="$SETUP_REQUEST" SLA="$SLA" ManagedBy=cloudformation Repo=https://github.com/enfogroup/sniffles/
+if [ -n "$CORE_LAMBDA_S3_KEY" ]; then
+  echo "Deploying cloudwatch alarm core..."
+  aws cloudformation deploy \
+    --stack-name "$FULL_STACK_NAME_CORE_LAMBDA" \
+    --template-file ./cloudformation-templates/lambda-cloudwatch-alarm.yml \
+    --parameter-overrides SnsTopic="$SnsTopic" LogGroupName="$LOG_GROUP_NAME_CORE_LAMBDA" FunctionName="$FUNCTION_NAME_CORE_LAMBDA" EvaluationPeriods="$EVALUATION_PERIODS" DatapointsToAlarm="$DATAPOINTS_TO_ALARM" ProjectKey="$PROJECT_KEY" \
+    --no-fail-on-empty-changeset \
+    --tags Project="$PROJECT" ProjectKey="$PROJECT_KEY" Account=$(aws sts get-caller-identity | jq -r '.Account') Environment="$ENVIRONMENT" CostCenter="$PROJECT" SetupRequest="$SETUP_REQUEST" SLA="$SLA" ManagedBy=cloudformation Repo=https://github.com/enfogroup/sniffles/
+fi
 
 if [ -n "$SLACK_CHANNEL" ]; then
   echo "Deploying cloudwatch alarm slack..."
