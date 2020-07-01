@@ -34,9 +34,9 @@ Prerequisites:
 1. If you want to use the Slack lambda integration, [set up a Slack app](https://api.slack.com/apps) with chat:write and files:write permissions in your workspace
 1. Clone this repo
 1. Assume into the AWS account you want to deploy to
-1. `cp deploy-all.{template,sh}`
-1. Edit `deploy-all.sh` with your favourite editor, enter the config at the top of the file
-1. `./deploy-all.sh`
+1. `cp config.{template,sh}`
+1. Edit `config.sh` with your favourite editor, enter the required config
+1. `./deploy-all.sh ./config.sh`
 
 This will set up:
 

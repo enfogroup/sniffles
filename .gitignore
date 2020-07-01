@@ -2,3 +2,4 @@ node_modules/
 dist/
 set-ssm-*.sh
 deploy-*.sh
+config*.sh
