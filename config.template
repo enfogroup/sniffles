@@ -51,7 +51,7 @@ SLACK_CHANNEL=""
 SLACK_TOKEN=""
 
 # The KMS key that will get used to encrypt the slack token.
-# Normally arn:aws:kms:<region>:<account-id>:alias/ssm
+# Normally arn:aws:kms:<region>:<account-id>:alias/aws/ssm
 SLACK_TOKEN_KEY=""
 
 # Where in Systems Manager Parameter Store the Slack token is stored.
