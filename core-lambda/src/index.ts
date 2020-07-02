@@ -7,6 +7,7 @@ import anyPass from 'ramda/src/anyPass'
 import both from 'ramda/src/both'
 import chain from 'ramda/src/chain'
 import cond from 'ramda/src/cond'
+import drop from 'ramda/src/drop'
 import endsWith from 'ramda/src/endsWith'
 import filter from 'ramda/src/filter'
 import flip from 'ramda/src/flip'
@@ -16,12 +17,14 @@ import ifElse from 'ramda/src/ifElse'
 import includes from 'ramda/src/includes'
 import isEmpty from 'ramda/src/isEmpty'
 import length from 'ramda/src/length'
+import lensProp from 'ramda/src/lensProp'
 import map from 'ramda/src/map'
 import match from 'ramda/src/match'
 import path from 'ramda/src/path'
 import pathSatisfies from 'ramda/src/pathSatisfies'
 import pipe from 'ramda/src/pipe'
 import prop from 'ramda/src/prop'
+import set from 'ramda/src/set'
 import split from 'ramda/src/split'
 import startsWith from 'ramda/src/startsWith'
 import T from 'ramda/src/T'
@@ -45,8 +48,9 @@ interface LogMessage {
   readonly owner: string
   readonly logGroup: string
   readonly logStream: string
-  readonly subscriptonFilters: string[]
+  readonly subscriptionFilters: string[]
   readonly logEvents: LogEvents
+  readonly logLink?: string
 }
 type LogMessages = ReadonlyArray<LogMessage>
 
@@ -54,7 +58,8 @@ let lastFetch = new Date(0),
   whitelist: string[] = []
 
 const
-  { AccountId, ErrorMessage, ProjectKey, TopicArn, WhitelistParameterStorePath } = process.env,
+  { AWS_REGION, AccountId, ErrorMessage, ProjectKey, TopicArn, WhitelistParameterStorePath } = process.env,
+  awsRegion = AWS_REGION || 'eu-west-1',
   ssm = new SSM(),
   sns = new SNS(),
   secondsAgo = (n: number) => new Date(new Date().valueOf() - n * 1000),
@@ -135,16 +140,25 @@ export const
     [ test(/^\/[^/]+\/[gimsuy]*$/), toRegExpFn ],
     [ both(startsWith('{'), endsWith('}')), toJspathFn ],
     [ T, toStringFn ],
-  ])
+  ]),
+  getLogId = pipe<LogMessage, string, string[], string[], string>(
+    path([ 'logEvents', 0, 'message' ]) as unknown as (x: LogMessage) => string,
+    split('\t'),
+    drop(1),
+    head
+  ),
+  addLogLink = (m: LogMessage) =>
+    set(lensProp('logLink'), `https://${awsRegion}.console.aws.amazon.com/cloudwatch/home?region=${awsRegion}#logsV2:log-groups/log-group/${m.logGroup.replace(/\//g, '$252F')}/log-events$3FfilterPattern$3D$2522${getLogId(m)}$2522`, m)
 
 export const handler = (event: KinesisStreamEvent) =>
   getWhitelist()
     // .then(tap(console.log))
     .then(map(toWhitelistFn))
-    .then((whitelistFns) => pipe<KinesisStreamEvent, KinesisStreamRecord[], LogMessages, LogMessages, LogMessages, Promise<SNS.Types.PublishResponse>[], Promise<SNS.Types.PublishResponse[]>>(
+    .then((whitelistFns) => pipe<KinesisStreamEvent, KinesisStreamRecord[], LogMessages, LogMessages, LogMessages, LogMessages, Promise<SNS.Types.PublishResponse>[], Promise<SNS.Types.PublishResponse[]>>(
       prop<string, any>('Records'),
       chain(parseRecord),
       filter(pathSatisfies(anyPass(whitelistFns))([ 'logEvents', 0, 'message' ])) as unknown as (x: LogMessages) => LogMessages,
+      map(addLogLink),
       tap((x) => console.log(`Found ${x.length} entries`)),
       map(publishLog),
       Promise.all.bind(Promise)
