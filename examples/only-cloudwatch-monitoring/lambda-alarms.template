@@ -11,7 +11,7 @@ LAMBDA_LOG_GROUP_NAME=""
 # e.g. my-function
 LAMBDA_FUNCTION_NAME=""
 
-# SNS Topic ARN from shared.sh
+# SNS Topic ARN, created by deploy-all.sh
 SNS_TOPIC=""
 
 # Project name
