@@ -4,8 +4,10 @@ This is an excellent option if you want to get notified when an error has been l
 
 Simple, cheap, and robust solution.
 
-`shared.sh` needs to be deployed once.
-
-`lambda-alarms.sh` needs to be modified and deployed for each lambda you want to monitor.
+1. `cp config-cloudwatch.{template,sh}`
+1. Edit `config-cloudwatch.sh`, only variables with `[VALUE]` need to be populated
+1. `./deploy-all.sh ./path/to/config-cloudwatch.sh`
+1. Make a copy of `lambda-alarms.template` for each lambda you want to monitor, and modify each copy appropriately
+1. Execute each `lambda-alarms` copy
 
 ![overview](./img/overview.png)
