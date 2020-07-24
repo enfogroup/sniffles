@@ -1,0 +1,41 @@
+#!/bin/sh
+
+# The stack name suffix will get appended to the cloudformation stacks deployed by this script.
+STACK_NAME_SUFFIX=""
+
+# Name of the Lambda function CloudWatch log group
+# e.g. /aws/lambda/my-function
+LAMBDA_LOG_GROUP_NAME=""
+
+# Name of the Lambda function
+# e.g. my-function
+LAMBDA_FUNCTION_NAME=""
+
+# SNS Topic ARN from shared.sh
+SNS_TOPIC=""
+
+# Project name
+PROJECT=""
+
+# jira project key
+PROJECT_KEY=""
+
+# jira ticket
+SETUP_REQUEST=""
+
+# e.g. Dev, Test, Production
+ENVIRONMENT=""
+
+# e.g. Weekday, 24/7
+SLA="Weekday"
+
+FULL_STACK_NAME_LAMBDA_ALARMS="Sniffles-Lambda-Cloudwatch-Alarm-Core-$STACK_NAME_SUFFIX"
+
+# Lambda CloudWatch alarms
+aws cloudformation deploy \
+  --stack-name "$FULL_STACK_NAME_CORE_LAMBDA" \
+  --template-file ./cloudformation-templates/lambda-cloudwatch-alarm.yml \
+  --parameter-overrides SnsTopic="$SNS_TOPIC" LogGroupName="$LAMBDA_LOG_GROUP_NAME" FunctionName="$LAMBDA_FUNCTION_NAME" EvaluationPeriods="$EVALUATION_PERIODS" DatapointsToAlarm="$DATAPOINTS_TO_ALARM" ProjectKey="$PROJECT_KEY" \
+  --no-fail-on-empty-changeset \
+  --tags Project="$PROJECT" ProjectKey="$PROJECT_KEY" Account=$(aws sts get-caller-identity | jq -r '.Account') Environment="$ENVIRONMENT" CostCenter="$PROJECT" SetupRequest="$SETUP_REQUEST" SLA="$SLA" ManagedBy=cloudformation Repo=https://github.com/enfogroup/sniffles/
+
