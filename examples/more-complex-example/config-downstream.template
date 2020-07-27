@@ -1,0 +1,104 @@
+#!/bin/sh
+
+# The stack name suffix will get appended to the cloudformation stacks deployed by this script.
+STACK_NAME_SUFFIX="[VALUE]"
+
+# If Yes, will deploy the assets module and upload lambdas to it.
+# If anything else, assumes the assets bucket exists, and lambdas have been uploaded to it.
+DEPLOY_ASSETS_MODULE="No"
+
+# The S3 bucket to hold Sniffles resources.
+# Used for the Slack lambda.
+RESOURCES_S3_BUCKET="[VALUE]"
+
+# The S3 key where to find the Slack lambda in the resources S3 bucket.
+# Leave empty to not deploy the core lambda
+CORE_LAMBDA_S3_KEY=""
+
+# Logs that match these patterns will get forwarded to the SNS topic.
+# Leave empty to not upload a whitelist.
+# It's a comma separated string, e.g. "/ERROR/i,{ .level === \"ERROR\" },string-match"
+LOG_WHITELIST=""
+
+# Where in Systems Manager Parameter Store the log whitelist patterns are stored.
+# No leading slash.
+WHITELIST_PATH=""
+
+# You can insert a descriptive message for the logs that get through the whitelist.
+# e.g. "Error logged"
+ERROR_MESSAGE=""
+
+# If there's an existing SNS topic to publish to, enter the ARN here
+# Leave blank to have a new SNS topic created
+EXISTING_SNS=""
+
+# Log groups that match these patterns will get auto subscribed to Sniffles.
+# Leave empty to not upload a log group whitelist.
+# It's a comma separated string, e.g. ^/aws/lambda/.*-prod.*$
+LOG_GROUPS_WHITELIST=""
+
+# Where in Systems Manager Parameter Store the log group whitelist patterns are stored.
+# Leave empty to disable automatic log group subscribing.
+# No leading slash.
+LOG_GROUPS_PATH=""
+
+# Which Slack channel alerts should be posted to.
+# Leave empty to disable alerts to Slack.
+SLACK_CHANNEL="[VALUE]"
+
+# The Slack token used to send alerts to Slack. Will get stored encrypted in parameter store.
+# Leave empty to not upload a Slack token.
+SLACK_TOKEN="[VALUE]"
+
+# The KMS key that will get used to encrypt the slack token.
+# Normally arn:aws:kms:<region>:<account-id>:alias/aws/ssm
+SLACK_TOKEN_KEY="[VALUE]"
+
+# Where in Systems Manager Parameter Store the Slack token is stored.
+# No leading slash.
+SLACK_TOKEN_PATH="sniffles/default/slack"
+
+# The Opsgenie SNS endpoint.
+# Leave empty to disable Opsgenie alerts.
+# https://api.opsgenie.com/v1/json/cloudwatch?apiKey=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+SNS_OPSGENIE_ENDPOINT="[VALUE]"
+
+# The Opsgenie CloudWatch endpoint.
+# Leave empty to disable Opsgenie alerts.
+# https://api.opsgenie.com/v1/json/amazonsns?apiKey=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+CLOUDWATCH_OPSGENIE_ENDPOINT="[VALUE]"
+
+# The S3 key where to find the Slack lambda in the resources S3 bucket.
+SLACK_LAMBDA_S3_KEY="[VALUE]"
+
+# Slack workspace ID to send CloudWatch alarms to.
+SLACK_WORKSPACE_ID="[VALUE]"
+
+# Slack channel ID to send CloudWatch alarms to.
+# Leave empty to disable alerts to Slack.
+SLACK_CHANNEL_ID="[VALUE]"
+
+# CloudWatch alarms
+EVALUATION_PERIODS="1"
+
+# CloudWatch alarms
+DATAPOINTS_TO_ALARM="1"
+
+# If there's an existing SNS topic to publish to, enter the ARN here
+# Leave blank to have a new SNS topic created
+EXISTING_CLOUDWATCH_SNS=""
+
+# Project name
+PROJECT=""
+
+# jira project key
+PROJECT_KEY=""
+
+# jira ticket
+SETUP_REQUEST=""
+
+# e.g. Dev, Test, Production
+ENVIRONMENT=""
+
+# e.g. Weekday, 24/7
+SLA="Weekday"
