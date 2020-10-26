@@ -1,0 +1,157 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Lambda to transform Sniffles messages bound for Opsgenie
+
+Parameters:
+  InputTopic:
+    Type: String
+    Description: SNS Topic ARN to subscribe to
+
+Resources:
+  Lambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Transforms Sniffles messages bound for Opsgenie
+      Code:
+        ZipFile: |
+          const AWS = require('aws-sdk'),
+            { inspect } = require('util'),
+            sns = new AWS.SNS(),
+            { TopicArn } = process.env,
+            cond = ([ head, ...tail]) => (x) =>
+              head[0](x) ? head[1](x)
+                : tail.length > 0 ? cond(tail)(x)
+                : undefined,
+            has = (p) => (o) => o.hasOwnProperty(p),
+            pipe = (steps) => (data) => steps.reduce((value, fn) => fn(value), data),
+            prop = (p) => (o) => o && o[ p ],
+            path = (ps) => (o) => ps.reduce((val, p) => prop(p)(val), o),
+            map = (fn) => (x) => x.map(fn),
+            pluck = (p) => map(prop(p)),
+            replace = (p) => (r) => (s) => s.replace(p, r),
+            extract = (p) => (s) => s.match(p)[ 1 ],
+            take = (n) => (xs) => xs.slice(0, n),
+            T = () => true,
+            tap = (fn) => (x) => { fn(x); return x; },
+            logFull = (x) => console.log(inspect(x, {depth: null})),
+            getRecords = pipe([
+              prop('Records'),
+              pluck('Sns'),
+              Promise.resolve.bind(Promise),
+            ]),
+            getMessage = cond([
+              [ has('message'), prop('message') ],
+              [ has('Message'), prop('Message') ],
+              [ T, () => { throw new Error('no message') } ],
+            ]),
+            fixSubject = ({Subject, Message}) => {
+              try {
+                return pipe([
+                  JSON.parse,
+                  path([ 'logEvents', 0, 'message' ]),
+                  extract(/({.*})/s),
+                  JSON.parse,
+                  getMessage,
+                  replace(/[^\w\[\]\(\)\/ .:;{}-]/)('-'),
+                  take(100),
+                ])(Message)
+              } catch (e) {
+                console.log('Could not fixSubject', e)
+              }
+              return Subject
+            },
+            fixMessageAttribute = ([k, v]) => ([
+              k,
+              {
+                DataType: v.Type,
+                ...(v.Type === 'String' ? {StringValue: v.Value} : {BinaryValue: v.Value}),
+              },
+            ]),
+            fixMessageAttributes = (MessageAttributes) =>
+              Object.fromEntries(map(fixMessageAttribute)(Object.entries(MessageAttributes))),
+            transformRecord = ({Subject, Message, MessageAttributes}) => ({
+              TopicArn,
+              Message,
+              MessageAttributes: fixMessageAttributes(MessageAttributes),
+              Subject: fixSubject({Subject, Message}),
+            }),
+            publish = (params) =>
+              sns.publish(params).promise()
+          exports.handler = (event) =>
+            getRecords(event)
+              .then(tap(logFull))
+              .then(map(transformRecord))
+              .then(tap(logFull))
+              .then(map(publish))
+              .then(Promise.all.bind(Promise))
+              .then(console.log)
+              .then(() => 'OK')
+              .catch(console.error)
+      Environment:
+        Variables:
+          TopicArn: !Ref TargetTopic
+      Handler: index.handler
+      MemorySize: 128
+      Timeout: 10
+      Role: !Sub ${LambdaExecutionRole.Arn}
+      FunctionName: sniffles-opsgenie-transformer
+      Runtime: nodejs12.x
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${Lambda}"
+      RetentionInDays: 30
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: MyPermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'sns:Publish'
+                Resource:
+                  - !Ref TargetTopic
+  LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:invokeFunction
+      FunctionName: !Ref Lambda
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref InputTopic
+  TargetTopic:
+    Type: "AWS::SNS::Topic"
+    Properties:
+      DisplayName: "sniffles-opsgenie-transformed"
+  LambdaSubscription:
+    Type: "AWS::SNS::Subscription"
+    Properties:
+      Endpoint: !Sub "${Lambda.Arn}"
+      Protocol: lambda
+      TopicArn: !Ref InputTopic
+
+Outputs:
+  TemplateID:
+    Description: Template reference name
+    Value: 'transformer'
+  Region:
+    Description: 'Region where stack is deployed'
+    Value: !Sub '${AWS::Region}'
+  StackName:
+    Description: 'Stack name.'
+    Value: !Sub '${AWS::StackName}'
+  SnsTopic:
+    Description: 'SNS Topic the transformer lambda outputs to'
+    Value: !Sub '${TargetTopic}'

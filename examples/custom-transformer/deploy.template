@@ -1,0 +1,29 @@
+#!/bin/sh
+
+# SNS topic to subscribe to
+INPUT_TOPIC=""
+
+# Project name
+PROJECT=""
+
+# jira project key
+PROJECT_KEY=""
+
+# jira ticket
+SETUP_REQUEST=""
+
+# e.g. Dev, Test, Production
+ENVIRONMENT=""
+
+# e.g. Weekday, 24/7
+SLA="Weekday"
+
+### STOP EDITING
+
+aws cloudformation deploy \
+  --stack-name Sniffles-Opsgenie-Transformer \
+  --template-file ./transformer.yml \
+  --no-fail-on-empty-changeset \
+  --parameter-overrides InputTopic="$INPUT_TOPIC" \
+  --capabilities CAPABILITY_IAM \
+  --tags Project="$PROJECT" ProjectKey="$PROJECT_KEY" Account=$(aws sts get-caller-identity | jq -r '.Account') Environment="$ENVIRONMENT" CostCenter="$PROJECT" SetupRequest="$SETUP_REQUEST" SLA="$SLA" ManagedBy=cloudformation Repo=https://github.com/enfogroup/sniffles/
