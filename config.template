@@ -8,10 +8,10 @@ STACK_NAME_SUFFIX=""
 DEPLOY_ASSETS_MODULE="No"
 
 # The S3 bucket to hold Sniffles resources.
-# Used for the Slack lambda.
+# Used for the lambda uploads.
 RESOURCES_S3_BUCKET=""
 
-# The S3 key where to find the Slack lambda in the resources S3 bucket.
+# The S3 key where to find the Core lambda in the resources S3 bucket.
 # Leave empty to not deploy the core lambda
 CORE_LAMBDA_S3_KEY=""
 
