@@ -41,6 +41,10 @@ if [ "$DEPLOY_ASSETS_MODULE" = "Yes" ]; then
     --no-fail-on-empty-changeset \
     --tags Project="$PROJECT" ProjectKey="$PROJECT_KEY" Account=$(aws sts get-caller-identity | jq -r '.Account') Environment="$ENVIRONMENT" CostCenter="$PROJECT" SetupRequest="$SETUP_REQUEST" SLA="$SLA" ManagedBy=cloudformation Repo=https://github.com/enfogroup/sniffles/
 
+  export RESOURCES_S3_BUCKET=$RESOURCES_S3_BUCKET
+  export CORE_LAMBDA_S3_KEY=$CORE_LAMBDA_S3_KEY
+  export SLACK_LAMBDA_S3_KEY=$SLACK_LAMBDA_S3_KEY
+
   echo "Building core lambda..."
   cd core-lambda
   yarn install
