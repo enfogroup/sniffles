@@ -37,7 +37,7 @@ EXISTING_SNS=""
 
 # Log groups that match these patterns will get auto subscribed to Sniffles.
 # Leave empty to not upload a log group whitelist.
-# It's a comma separated string, e.g. ^/aws/lambda/.*-prod.*$
+# It's a comma separated string, e.g. ^/aws/lambda/.*-prod-.*$
 LOG_GROUPS_WHITELIST=""
 
 # Where in Systems Manager Parameter Store the log group whitelist patterns are stored.
