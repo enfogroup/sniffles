@@ -11,6 +11,9 @@ DEPLOY_ASSETS_MODULE="No"
 # Used for the Slack lambda.
 RESOURCES_S3_BUCKET="[VALUE]"
 
+# If Yes, the deployment will not attempt to create a new S3 bucket.
+USE_EXISTING_S3_BUCKET="No"
+
 # The S3 key where to find the Slack lambda in the resources S3 bucket.
 # Leave empty to not deploy the core lambda
 CORE_LAMBDA_S3_KEY="[VALUE]"

@@ -8,10 +8,13 @@ STACK_NAME_SUFFIX=""
 DEPLOY_ASSETS_MODULE="No"
 
 # The S3 bucket to hold Sniffles resources.
-# Used for the Slack lambda.
+# Used for the lambda uploads.
 RESOURCES_S3_BUCKET=""
 
-# The S3 key where to find the Slack lambda in the resources S3 bucket.
+# If Yes, the deployment will not attempt to create a new S3 bucket.
+USE_EXISTING_S3_BUCKET="No"
+
+# The S3 key where to find the Core lambda in the resources S3 bucket.
 # Leave empty to not deploy the core lambda
 CORE_LAMBDA_S3_KEY=""
 
@@ -34,7 +37,7 @@ EXISTING_SNS=""
 
 # Log groups that match these patterns will get auto subscribed to Sniffles.
 # Leave empty to not upload a log group whitelist.
-# It's a comma separated string, e.g. ^/aws/lambda/.*-prod.*$
+# It's a comma separated string, e.g. ^/aws/lambda/.*-prod-.*$
 LOG_GROUPS_WHITELIST=""
 
 # Where in Systems Manager Parameter Store the log group whitelist patterns are stored.
